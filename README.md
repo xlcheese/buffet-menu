@@ -26,6 +26,8 @@ random order. It takes about 2 minutes, with the mouse only.
    ```
 3. **Before you start, size the window the way you normally use Xed**: maximised, or the size you
    usually keep it. The second round opens at the same size.
+   You'll also be asked how often you use Xed: if you use it a lot, you know where its menu bar keeps
+   things, and the results show that.
 4. At the end, click **Copy results** and paste them where you were asked to share them.
 
 The menus don't do anything: they're only for finding. Nothing is saved, nothing is installed, and

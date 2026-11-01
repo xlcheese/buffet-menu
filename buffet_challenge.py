@@ -38,6 +38,8 @@ TASKS = [
 MENU_BAR = "Menu bar"
 BUFFET = "Buffet menu"
 WINDOW_SIZE = (1000, 650)
+# How often the player uses Xed: someone who knows Xed's menu bar may have a head start with it
+XED_USE = ("Never", "Sometimes", "Often")
 
 WELCOME = f"""Welcome to the Buffet Menu Challenge!
 
@@ -84,6 +86,7 @@ class Challenge:
         self.results = {}   # round: [(task, seconds, misses, menus opened)]
         self.window = None
         self.buffet_layout = "its starting layout"
+        self.xed_use = None
         self.geometry = None   # where the first window was, so the second one is in the same place
         self.maximized = False
         self.show_round(0)
@@ -139,8 +142,8 @@ class Challenge:
         screen = monitor.get_geometry()
         width, height = self.window.get_size()
         window = "maximised" if self.window.is_maximized() else f"{width}×{height}"
-        lines += ["", f"Screen {screen.width}×{screen.height}, window {window}, "
-                      f"buffet menu in {self.buffet_layout}"]
+        lines += ["", f"Uses Xed: {self.xed_use}", "",
+                  f"Screen {screen.width}×{screen.height}, window {window}, buffet menu in {self.buffet_layout}"]
         return "\n".join(lines)
 
 
@@ -198,6 +201,8 @@ class ChallengeWindow(Gtk.ApplicationWindow):
         self.button.connect("clicked", self.on_button)
         panel.pack_start(self.prompt, False, False, 0)
         panel.pack_start(self.progress, False, False, 0)
+        if index == 0:
+            panel.pack_start(self.xed_question(), False, False, 0)
         panel.pack_start(self.button, False, False, 0)
         layout.pack_start(panel, False, False, 0)
 
@@ -212,11 +217,30 @@ class ChallengeWindow(Gtk.ApplicationWindow):
             self.text.get_buffer().set_text(WELCOME)
             self.prompt.set_markup(f"<b>{round_title}</b>")
             self.button.set_label("Start the challenge")
+            # Not until the question is answered
+            self.button.set_sensitive(False)
         else:
             self.text.get_buffer().set_text(f"{round_title}. The same commands as in round 1, in a different order.")
             self.prompt.set_markup(f"<b>{round_title}</b>")
             self.button.set_label("Start round 2")
         self.next_action = self.next_task
+
+    def xed_question(self):
+        """How often do you use Xed? Radio buttons with none chosen to start with."""
+        self.question = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER)
+        self.question.pack_start(Gtk.Label(label="How often do you use Xed?"), False, False, 0)
+        # A radio button is always chosen in its group: this hidden one is, until the player chooses
+        unanswered = Gtk.RadioButton()
+        for answer in XED_USE:
+            choice = Gtk.RadioButton.new_with_label_from_widget(unanswered, answer)
+            choice.connect("toggled", self.on_xed_use, answer)
+            self.question.pack_start(choice, False, False, 0)
+        return self.question
+
+    def on_xed_use(self, choice, answer):
+        if choice.get_active():
+            self.challenge.xed_use = answer
+            self.button.set_sensitive(True)
 
     # The round
 
@@ -225,6 +249,8 @@ class ChallengeWindow(Gtk.ApplicationWindow):
 
     def next_task(self):
         """Shows the next command to find, with the button that starts the clock."""
+        if self.task < 0 and getattr(self, "question", None):
+            self.question.hide()
         self.task += 1
         self.misses = 0
         self.opened = 0
