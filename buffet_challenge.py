@@ -47,6 +47,9 @@ menu at once? Let's find out, with the menus of Xed, Linux Mint's text editor.
 There are two rounds of {len(TASKS)} commands: one with Xed's normal menu bar, and one with the buffet
 menu, in a random order. The commands are the same in both rounds, in a different order.
 
+Before you start: size this window the way you normally use Xed, maximised or the size you usually
+keep it. The second round opens at the same size.
+
 For each command:
   1. Click Start.
   2. Find the command in the menus and click it, as quickly as you can.
@@ -82,14 +85,18 @@ class Challenge:
         self.window = None
         self.buffet_layout = "its starting layout"
         self.geometry = None   # where the first window was, so the second one is in the same place
+        self.maximized = False
         self.show_round(0)
 
     def show_round(self, index):
         if self.window is not None:
             self.geometry = self.window.get_position() + self.window.get_size()
+            self.maximized = self.window.is_maximized()
             self.window.destroy()
         self.window = ChallengeWindow(self, self.order[index], index)
-        if self.geometry:
+        if self.maximized:
+            self.window.maximize()
+        elif self.geometry:
             x, y, width, height = self.geometry
             self.window.move(x, y)
             self.window.resize(width, height)
@@ -131,7 +138,8 @@ class Challenge:
         monitor = Gdk.Display.get_default().get_monitor_at_window(self.window.get_window())
         screen = monitor.get_geometry()
         width, height = self.window.get_size()
-        lines += ["", f"Screen {screen.width}×{screen.height}, window {width}×{height}, "
+        window = "maximised" if self.window.is_maximized() else f"{width}×{height}"
+        lines += ["", f"Screen {screen.width}×{screen.height}, window {window}, "
                       f"buffet menu in {self.buffet_layout}"]
         return "\n".join(lines)
 

@@ -24,7 +24,9 @@ random order. It takes about 2 minutes, with the mouse only.
    ```bash
    python3 buffet_challenge.py
    ```
-3. At the end, click **Copy results** and paste them where you were asked to share them.
+3. **Before you start, size the window the way you normally use Xed**: maximised, or the size you
+   usually keep it. The second round opens at the same size.
+4. At the end, click **Copy results** and paste them where you were asked to share them.
 
 The menus don't do anything: they're only for finding. Nothing is saved, nothing is installed, and
 nothing is sent anywhere. It doesn't need administrator rights. You can read the code first.
@@ -59,23 +61,6 @@ arrow keys move across the columns. The status line shows how long it took to ch
 ![The preferences](screenshots/preferences.png)
 
 When the menus are too tall for the screen, the menu scrolls.
-
-## Other applications (experimental)
-
-`buffet_remote.py` shows the menus of other GTK3 applications as a Buffet menu, without changing them. It
-uses `appmenu-gtk-module`, the GTK module that global menu panels use, to read their menu bar:
-
-```bash
-sudo apt install appmenu-gtk3-module
-python3 buffet_remote.py --registrar &   # hides the menu bars of the applications started with the module
-GTK_MODULES=appmenu-gtk-module xed &     # start an application with the module
-python3 buffet_remote.py                 # show the active window's menus: give this a keyboard shortcut
-```
-
-It has been tried with Xed, GIMP 3, Inkscape 1.x, Code::Blocks and Xcalculator, on X11. Other
-applications with a GTK3 menu bar should work too.
-Inkscape doesn't send its keyboard shortcuts with its menus, so they don't show. `buffet_remote.py --dump`
-prints what the active window sends.
 
 ## License
 
