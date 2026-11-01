@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg height="16px" viewBox="0 0 16 16" width="16px" xmlns="http://www.w3.org/2000/svg">
+    <g fill="#2e3436">
+        <!-- left column: heading, then three items -->
+        <path d="m 0 2 h 7 v 2 h -7 z m 0 0"/>
+        <path d="m 1 7 h 5 v 1 h -5 z m 0 0"/>
+        <path d="m 1 10 h 5 v 1 h -5 z m 0 0"/>
+        <path d="m 1 13 h 5 v 1 h -5 z m 0 0"/>
+        <!-- right column: heading, then three items -->
+        <path d="m 9 2 h 7 v 2 h -7 z m 0 0"/>
+        <path d="m 10 7 h 5 v 1 h -5 z m 0 0"/>
+        <path d="m 10 10 h 5 v 1 h -5 z m 0 0"/>
+        <path d="m 10 13 h 5 v 1 h -5 z m 0 0"/>
+    </g>
+</svg>
