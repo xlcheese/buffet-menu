@@ -64,6 +64,38 @@ arrow keys move across the columns. The status line shows how long it took to ch
 
 When the menus are too tall for the screen, the menu scrolls.
 
+## The Buffet Menu app (beta)
+
+`buffet_menu.py` gives your own applications the Buffet menu, without changing them. Choose the
+applications in its window, then press **Ctrl+Alt+N** in one of them, or click the Buffet icon in the panel,
+to see all its menus at once.
+
+1. Install what it needs:
+   ```bash
+   sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils
+   ```
+2. Download the project (**Code → Download ZIP**) and keep its files together in one folder.
+3. Start it:
+   ```bash
+   python3 buffet_menu.py
+   ```
+4. In its window, choose an application on the left and click **+**. Then close the application and
+   open it again from the menu: its menu bar is gone, and **Ctrl+Alt+N** shows its Buffet menu.
+
+![The Buffet Menu app](screenshots/app.png)
+
+- **Each application has its own settings:** click the gear next to it. The first time its Buffet menu
+  opens, it picks one row for an application with up to 4 menus, two rows for more.
+- **Keyboard shortcut, panel icon and Start at login** are at the bottom of the window. Without Start at
+  login, the applications' menu bars come back until Buffet Menu is started again.
+- **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
+  starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
+  menu panels read it. `−` deletes the copy, and the application is as it was.
+- **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
+  Tried with Xed, GIMP 3, Inkscape 1.x, Code::Blocks and Xcalculator. Not with Flatpak applications, applications with a header
+  bar menu, or Wayland. Inkscape doesn't send its keyboard shortcuts with its menus, so they don't show.
+- **To stop it:** `python3 buffet_menu.py --quit`, or Quit from the panel icon's menu.
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).

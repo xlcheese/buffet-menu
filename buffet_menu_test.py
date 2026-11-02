@@ -1207,8 +1207,8 @@ class TestWindow(Gtk.ApplicationWindow):
 class PreferencesDialog(Gtk.Dialog):
     """The buffet menu's settings, as they could appear in an application's preferences."""
 
-    def __init__(self, parent, settings, menu_count, on_changed):
-        super().__init__(title="Preferences", transient_for=parent, resizable=False)
+    def __init__(self, parent, settings, menu_count, on_changed, title="Preferences"):
+        super().__init__(title=title, transient_for=parent, resizable=False)
         self.settings = settings
         self.on_changed = on_changed
         self.add_button("_Close", Gtk.ResponseType.CLOSE)
@@ -1265,6 +1265,15 @@ class PreferencesDialog(Gtk.Dialog):
             heading.set_margin_top(12)
         box.pack_start(heading, False, False, 0)
         group = None
+        if all(self.settings[key] != value for value, _label, _extra, _note in choices):
+            # Not chosen yet: a radio button is always chosen in its group, so a hidden one is
+            group = Gtk.RadioButton(no_show_all=True)
+            box.pack_start(group, False, False, 0)
+            if key == "layout":
+                note = Gtk.Label(label="Chosen the first time this menu opens, from how many menus there are",
+                                 xalign=0, margin_bottom=6)
+                note.get_style_context().add_class("dim-label")
+                box.pack_start(note, False, False, 0)
         for value, label, extra, note in choices:
             button = Gtk.RadioButton.new_with_mnemonic_from_widget(group, label)
             group = group or button
