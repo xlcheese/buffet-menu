@@ -72,7 +72,7 @@ to see all its menus at once.
 
 1. Install what it needs:
    ```bash
-   sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils
+   sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0
    ```
 2. Download the project (**Code → Download ZIP**) and keep its files together in one folder.
 3. Start it:

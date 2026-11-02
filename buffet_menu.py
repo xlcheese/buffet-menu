@@ -10,7 +10,7 @@ start with appmenu-gtk-module, which publishes their menu bar on D-Bus, and the 
     python3 buffet_menu.py --show     shows the Buffet menu of the active window
     python3 buffet_menu.py --quit     stops the service: the applications' menu bars come back
 
-Needs: sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils
+Needs: sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0
 """
 
 import glob
@@ -58,12 +58,14 @@ MARK = "X-Buffet-Menu"
 DEFAULT_SHORTCUT = "<Control><Alt>n"
 # How many windows' menus are kept loaded, to show them without waiting
 LOADED_WINDOWS = 8
+# How many windows' Buffet menus are kept built after they close, to show again at once
+BUILT_MENUS = 4
 # BUFFET_MENU_DEBUG=1 prints how long each menu took to show
 DEBUG = bool(os.environ.get("BUFFET_MENU_DEBUG"))
 # Buffet Menu's own module, built with build.sh: a header bar with the Buffet button, in the applications' windows
 HEADER_BAR_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libbuffet-headerbar.so")
 MODULE_FILES = ("/usr/lib/*/gtk-3.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-3.0/modules/libappmenu-gtk-module.so")
-INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils"
+INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0"
 
 # Starts an application with the Buffet menu: the module publishes its menu bar, and BUFFET_MENU_APP tells
 # the service which application it is, to use its settings
@@ -114,8 +116,6 @@ def missing_packages():
         missing.append("appmenu-gtk3-module (to read the applications' menus)")
     if Keybinder is None:
         missing.append("gir1.2-keybinder-3.0 (for the keyboard shortcut)")
-    if shutil.which("xprop") is None:
-        missing.append("x11-utils (to find the active window)")
     return missing
 
 
@@ -314,8 +314,8 @@ def disable(app):
 def window_app(xid):
     """Which application a window belongs to: the id of its menu entry, as the launcher passed it on, or else
     its window class."""
-    pid = remote.xprop("-id", str(xid), "_NET_WM_PID").split("=")[-1].strip()
-    if pid.isdigit():
+    pid = remote.window_number(xid, "_NET_WM_PID")
+    if pid:
         try:
             with open(f"/proc/{pid}/environ", "rb") as source:
                 for variable in source.read().split(b"\0"):
@@ -323,7 +323,9 @@ def window_app(xid):
                         return variable.split(b"=", 1)[1].decode()
         except OSError:
             pass
-    window_class = remote.xprop("-id", str(xid), "WM_CLASS").split(",")[-1].strip().strip('"')
+    # The instance and the class, each ended by a zero byte
+    names = (remote.x11.get(xid, "WM_CLASS") or b"").split(b"\0")
+    window_class = names[1].decode(errors="replace") if len(names) > 1 else ""
     return f"class:{window_class}" if window_class else "class:unknown"
 
 
@@ -371,6 +373,8 @@ class BuffetMenuApp(Gtk.Application):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.settings = None
         self.menu = None
+        self.built = {}    # the Buffet menus shown before, by window: xid → (menus, WindowBuffet), the latest last
+        self.published = None   # the menus of the window whose Buffet menu is open (a RemoteMenu)
         self.window = None
         self.status_icon = None
         self.shortcut = None
@@ -407,6 +411,8 @@ class BuffetMenuApp(Gtk.Application):
             Keybinder.init()
             self.bind_shortcut(self.settings["shortcut"])
         self.show_panel_icon(self.settings["panel-icon"])
+        # The windows already open, if Buffet Menu was started after them: their menus are loaded too
+        GLib.timeout_add(500, self.load_open_windows)
 
     def do_shutdown(self):
         if self.registrar:
@@ -485,8 +491,18 @@ class BuffetMenuApp(Gtk.Application):
             entry["layout"] = layout
             self.changed()
 
-        self.menu = remote.WindowBuffet(xid, menus, lambda chosen, _accel: menus_published.choose(chosen),
-                                        self.on_menu_closed)
+        self.published = menus_published
+        built_menus, menu = self.built.pop(xid, (None, None))
+        if menu is not None and built_menus == menus:
+            # The same menus as last time: shown again, as built then
+            menu.update_position()
+        else:
+            if menu is not None:
+                self.destroy_menu(menu)
+            menu = remote.WindowBuffet(xid, menus, lambda chosen, _accel: self.published.choose(chosen),
+                                       self.on_menu_closed)
+        self.menu = menu
+        self.menu.built_menus = menus
         self.menu.set_layout(entry["layout"], entry["per-row"])
         self.menu.set_width(entry["width"])
         self.menu.set_rows(entry["rows"])
@@ -534,6 +550,21 @@ class BuffetMenuApp(Gtk.Application):
                     f"It {why}, so it was taken off Buffet Menu's list. It will be as before when you reopen it.")
         return False
 
+    def load_open_windows(self):
+        """Loads the menus of the windows open now that have the Buffet menu, one at a time, the window on top
+        last, so that it's kept."""
+        windows = [xid for xid in remote.x11.get(remote.x11.root, "_NET_CLIENT_LIST_STACKING") or []
+                   if not window_app(xid).startswith("class:") and remote.window_menu(xid) is not None]
+        windows = windows[-LOADED_WINDOWS:]
+
+        def load_next():
+            if windows:
+                self.load_window(windows.pop(0))
+            return bool(windows)
+
+        GLib.idle_add(load_next)
+        return False
+
     def load_window(self, xid):
         where = remote.window_menu(xid)
         if where is not None and where not in self.loaded:
@@ -542,6 +573,13 @@ class BuffetMenuApp(Gtk.Application):
 
     def on_menu_closed(self):
         menu, self.menu = self.menu, None
+        # Kept, to show again
+        self.built[menu.xid] = (menu.built_menus, menu)
+        while len(self.built) > BUILT_MENUS:
+            self.destroy_menu(self.built.pop(next(iter(self.built)))[1])
+
+    @staticmethod
+    def destroy_menu(menu):
 
         def destroy():
             for popup in [menu.popup] + menu.sub_popups:

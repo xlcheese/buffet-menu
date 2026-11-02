@@ -9,15 +9,15 @@ D-Bus by appmenu-gtk-module, the GTK module that global menu panels use.
     python3 buffet_remote.py --registrar &      first: hide the menu bars of applications started with the module
     GTK_MODULES=appmenu-gtk-module xed &        start Xed with the module
     python3 buffet_remote.py                    show the active window's menus (give this a keyboard shortcut)
-    python3 buffet_remote.py --window 0x3a00007 or of a given window, by its X11 id as xprop shows it
+    python3 buffet_remote.py --window 0x3a00007 or of a given window, by its X11 id (as xprop or wmctrl -l show it)
     sleep 3; python3 buffet_remote.py --dump    print what the active window sends: its menus, with their shortcuts
 
 The layout and keyboard shortcut settings are the ones set in buffet_menu_test.py (Edit → Preferences).
 """
 
 import argparse
+import ctypes
 import os
-import subprocess
 import sys
 import time
 
@@ -30,8 +30,8 @@ from gi.repository import Gdk, GdkX11, Gio, GLib  # noqa: E402
 
 # How long to wait for the application to send its whole menu, in seconds
 LOAD_TIMEOUT = 2.0
-# How long to wait for the changes to a menu that has been loaded before, in seconds
-REFRESH_TIME = 0.05
+# How long to wait, at most, for the changes to a menu that has been loaded before, in seconds
+REFRESH_TIME = 0.1
 # appmenu-gtk-module hides an application's menu bar while a program owns this name on D-Bus, and shows it
 # again when the name is let go. It doesn't need anything else from that program.
 REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
@@ -53,18 +53,74 @@ def run_registrar():
     loop.run()
 
 
+class X11:
+    """Reads the properties of X11 windows with libX11, in this process: much quicker than starting xprop."""
+
+    def __init__(self):
+        self.lib = ctypes.cdll.LoadLibrary("libX11.so.6")
+        self.lib.XOpenDisplay.restype = ctypes.c_void_p
+        self.lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.lib.XInternAtom.restype = ctypes.c_ulong
+        self.lib.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        self.lib.XDefaultRootWindow.restype = ctypes.c_ulong
+        self.lib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        self.lib.XGetWindowProperty.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_long, ctypes.c_long, ctypes.c_int,
+            ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_void_p)]
+        self.lib.XFree.argtypes = [ctypes.c_void_p]
+        # A window that has just closed would otherwise end the program, with libX11's own error handler
+        self.on_error = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)(lambda _display, _error: 0)
+        self.lib.XSetErrorHandler(self.on_error)
+        self.display = self.lib.XOpenDisplay(None)
+        self.root = self.lib.XDefaultRootWindow(self.display) if self.display else 0
+        self.atoms = {}
+
+    def atom(self, name):
+        if name not in self.atoms:
+            self.atoms[name] = self.lib.XInternAtom(self.display, name.encode(), False)
+        return self.atoms[name]
+
+    def get(self, window, name):
+        """A property's value: bytes for text, a list of numbers for numbers and windows, or None."""
+        if not self.display or not window:
+            return None
+        kind, size, count, after = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_ulong(), ctypes.c_ulong()
+        data = ctypes.c_void_p()
+        # AnyPropertyType is 0; up to 64 KiB
+        if self.lib.XGetWindowProperty(self.display, window, self.atom(name), 0, 16384, False, 0, ctypes.byref(kind),
+                                       ctypes.byref(size), ctypes.byref(count), ctypes.byref(after),
+                                       ctypes.byref(data)) != 0 or not data.value:
+            return None
+        try:
+            if size.value == 8:
+                return ctypes.string_at(data.value, count.value)
+            if size.value == 32:
+                # Each one is a C long, whatever its size on this computer
+                return list((ctypes.c_long * count.value).from_address(data.value))
+            return None
+        finally:
+            self.lib.XFree(data)
+
+
+x11 = X11()
+
+
 def active_window():
-    # For example: _NET_ACTIVE_WINDOW(WINDOW): window id # 0x3a00007
-    words = xprop("-root", "_NET_ACTIVE_WINDOW").split()
-    return int(words[-1], 16) if words and words[-1].startswith("0x") and int(words[-1], 16) else None
+    value = x11.get(x11.root, "_NET_ACTIVE_WINDOW")
+    return value[0] if value and value[0] else None
 
 
 def window_property(xid, name):
     """A text property of an X11 window, or None."""
-    output = xprop("-id", str(xid), name)
-    # For example: _GTK_UNIQUE_BUS_NAME(UTF8_STRING) = ":1.42"
-    value = output.split("=", 1)[1].strip() if "=" in output else ""
-    return value[1:-1] if value.startswith('"') else None
+    value = x11.get(xid, name)
+    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else None
+
+
+def window_number(xid, name):
+    """A number property of an X11 window, such as _NET_WM_PID, or None."""
+    value = x11.get(xid, name)
+    return value[0] if isinstance(value, list) and value else None
 
 
 def window_menu(xid):
@@ -85,18 +141,11 @@ def window_accels(xid):
     module keeps them: for a menu that GTK publishes itself, which doesn't include them."""
     text = window_property(xid, ACCELS_PROPERTY) or ""
     accels = {}
-    for pair in text.replace('\\"', '"').split("|"):
+    for pair in text.split("|"):
         action, _equals, accel = pair.rpartition("=")
         if action and accel:
             accels[action] = accel
     return accels
-
-
-def xprop(*args):
-    try:
-        return subprocess.run(["xprop", *args], capture_output=True, text=True).stdout
-    except FileNotFoundError:
-        sys.exit("buffet_remote.py needs xprop: sudo apt install x11-utils")
 
 
 def spin(seconds):
@@ -136,6 +185,9 @@ class RemoteMenu:
 
     def __init__(self, bus_name, path, application_path=None, window_path=None):
         self.connection = Gio.bus_get_sync(Gio.BusType.SESSION)
+        self.bus_name = bus_name
+        # Where the application answers on its main thread, in turn with what it was asked before
+        self.actions_path = application_path or path
         self.model = Gio.DBusMenuModel.get(self.connection, bus_name, path)
         # The actions of the menu items, by group: those the module publishes with the menu, and the
         # application's and the window's, for a menu that GTK publishes itself (Inkscape's, for example)
@@ -167,8 +219,23 @@ class RemoteMenu:
         """Brings a menu loaded before up to date. D-Bus has kept it so, but some applications only change a
         submenu when it opens, like Xed's list of open documents: each one opens again, briefly."""
         self.open_all()
-        spin(REFRESH_TIME)
+        self.wait_for_application()
         self.close_all()
+
+    def wait_for_application(self):
+        """Waits until the application has answered what it was sent: it answers in turn, so its changes to the
+        menu have arrived when it answers a question asked after them."""
+        answered = []
+        self.connection.call(self.bus_name, self.actions_path, "org.gtk.Actions", "List", None, None,
+                             Gio.DBusCallFlags.NONE, int(REFRESH_TIME * 1000), None,
+                             lambda _connection, _result: answered.append(True))
+        context = GLib.MainContext.default()
+        end = time.monotonic() + REFRESH_TIME
+        while not answered and time.monotonic() < end:
+            if not context.iteration(False):
+                time.sleep(0.001)
+        while context.pending():
+            context.iteration(False)
 
     def open_all(self):
         """Tells each submenu that it's opening, keeping the submenus found. Returns how many items there are."""
@@ -259,13 +326,18 @@ class WindowBuffet(buffet.BuffetMenu):
     """A buffet menu under the title bar of another application's window."""
 
     def __init__(self, xid, menus, on_chosen, on_closed):
+        self.xid = xid
         self.window = GdkX11.X11Window.foreign_new_for_display(Gdk.Display.get_default(), xid)
         self.on_closed = on_closed
-        # Where the window's header bar and Buffet button are, if Buffet Menu's header bar module gave it one:
-        # "x y width height" of each, in the window
-        header = window_property(xid, HEADER_PROPERTY)
-        self.header_position = [int(number) for number in header.split()] if header and len(header.split()) == 8 else None
+        self.header_position = None
+        self.update_position()
         super().__init__(None, None, menus, on_chosen, lambda: None)
+
+    def update_position(self):
+        """Where the window's header bar and Buffet button are, if Buffet Menu's header bar module gave it one:
+        "x y width height" of each, in the window. They move when the window is resized."""
+        header = window_property(self.xid, HEADER_PROPERTY)
+        self.header_position = [int(number) for number in header.split()] if header and len(header.split()) == 8 else None
 
     def header_rect(self):
         if self.header_position:
