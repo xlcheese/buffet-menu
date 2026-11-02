@@ -481,38 +481,59 @@ class BuffetMenuApp(Gtk.Application):
             self.changed()
             self.notify(f"{app_name(app)} has no menu bar", "Its menus can't be shown as a Buffet menu.")
             return False
-        entry["menus"] = len(menus)
-        entry["no-menu-bar"] = False
-        entry["own-header-bar"] = False
-        self.changed()
+        if entry["menus"] != len(menus) or entry["no-menu-bar"] or entry["own-header-bar"]:
+            entry["menus"] = len(menus)
+            entry["no-menu-bar"] = False
+            entry["own-header-bar"] = False
+            self.changed()
+        loaded = time.monotonic()
+
+        self.published = menus_published
+        built_menus, menu = self.built.pop(xid, (None, None))
+        kept = menu is not None and built_menus == menus
+        if kept:
+            # The same menus as last time: shown again, as built then
+            menu.update_position()
+        else:
+            if menu is not None:
+                self.destroy_menu(menu)
+            menu = self.build_menu(xid, menus)
+        self.configure(menu, entry)
+        self.menu = menu
+        built = time.monotonic()
+        self.menu.open(keyboard=keyboard)
+        if DEBUG:
+            done = time.monotonic()
+            print(f"{app}: menu shown in {done - started:.2f} s (menus {loaded - started:.2f} s, "
+                  f"{'kept' if kept else 'built'} {built - loaded:.2f} s, opened {done - built:.2f} s)", flush=True)
+        return False
+
+    def build_menu(self, xid, menus):
+        menu = remote.WindowBuffet(xid, menus, lambda chosen, _accel: self.published.choose(chosen),
+                                   self.on_menu_closed)
+        menu.built_menus = menus
+        return menu
+
+    def configure(self, menu, entry):
+        """Gives a window's Buffet menu its application's settings."""
 
         def on_layout_chosen(layout):
             # The layout the menu picked for itself, the first time it opened: kept, as if chosen in its settings
             entry["layout"] = layout
             self.changed()
 
-        self.published = menus_published
-        built_menus, menu = self.built.pop(xid, (None, None))
-        if menu is not None and built_menus == menus:
-            # The same menus as last time: shown again, as built then
-            menu.update_position()
-        else:
-            if menu is not None:
-                self.destroy_menu(menu)
-            menu = remote.WindowBuffet(xid, menus, lambda chosen, _accel: self.published.choose(chosen),
-                                       self.on_menu_closed)
-        self.menu = menu
-        self.menu.built_menus = menus
-        self.menu.set_layout(entry["layout"], entry["per-row"])
-        self.menu.set_width(entry["width"])
-        self.menu.set_rows(entry["rows"])
-        self.menu.set_no_room(entry["no-room"])
-        self.menu.set_shortcuts(entry["shortcuts"])
-        self.menu.on_layout_chosen = on_layout_chosen
-        self.menu.open(keyboard=keyboard)
-        if DEBUG:
-            print(f"{app}: menu shown in {time.monotonic() - started:.2f} s", flush=True)
-        return False
+        menu.set_layout(entry["layout"], entry["per-row"])
+        menu.set_width(entry["width"])
+        menu.set_rows(entry["rows"])
+        menu.set_no_room(entry["no-room"])
+        menu.set_shortcuts(entry["shortcuts"])
+        menu.on_layout_chosen = on_layout_chosen
+
+    def keep(self, menu):
+        """Keeps a window's Buffet menu built, to show again, for the last few windows."""
+        self.built[menu.xid] = (menu.built_menus, menu)
+        while len(self.built) > BUILT_MENUS:
+            self.destroy_menu(self.built.pop(next(iter(self.built)))[1])
 
     def menus_of(self, where, accels):
         """A window's menus, from where they're published on D-Bus (see buffet_remote.window_menu()): loaded
@@ -566,17 +587,27 @@ class BuffetMenuApp(Gtk.Application):
         return False
 
     def load_window(self, xid):
+        """Loads a window's menus and builds its Buffet menu, without showing it: its first opening is then as
+        quick as the others."""
         where = remote.window_menu(xid)
-        if where is not None and where not in self.loaded:
-            self.menus_of(where, remote.window_accels(xid))
+        if where is None or where in self.loaded or self.menu is not None:
+            return False
+        started = time.monotonic()
+        _published, menus = self.menus_of(where, remote.window_accels(xid))
+        app = window_app(xid)
+        if not menus or app.startswith("class:") or xid in self.built:
+            return False
+        menu = self.build_menu(xid, menus)
+        self.configure(menu, app_settings(self.settings, app))
+        menu.prepare()
+        self.keep(menu)
+        if DEBUG:
+            print(f"{app}: menu loaded and built in {time.monotonic() - started:.2f} s", flush=True)
         return False
 
     def on_menu_closed(self):
         menu, self.menu = self.menu, None
-        # Kept, to show again
-        self.built[menu.xid] = (menu.built_menus, menu)
-        while len(self.built) > BUILT_MENUS:
-            self.destroy_menu(self.built.pop(next(iter(self.built)))[1])
+        self.keep(menu)
 
     @staticmethod
     def destroy_menu(menu):

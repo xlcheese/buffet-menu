@@ -580,6 +580,14 @@ class BuffetMenu:
             self.select((column or self.columns[0]).items[0])
         self.on_opened()
 
+    def prepare(self):
+        """Lays the menu out without showing it, so that it shows at once when it opens: GTK measures the
+        items, loads the fonts and sets up the pop-up's window now."""
+        self.style_headings()
+        self.lay_out()
+        self.place()
+        self.popup.realize()
+
     def close(self):
         if not self.is_open:
             return
