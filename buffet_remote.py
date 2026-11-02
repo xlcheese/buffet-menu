@@ -30,8 +30,10 @@ from gi.repository import Gdk, GdkX11, Gio, GLib  # noqa: E402
 
 # How long to wait for the application to send its whole menu, in seconds
 LOAD_TIMEOUT = 2.0
-# How long to wait, at most, for the changes to a menu that has been loaded before, in seconds
+# How long to wait, at most, for the application to answer, in seconds
 REFRESH_TIME = 0.1
+# A menu is converted again after this long anyway, even if the application sent no change, in seconds
+CONVERTED_TIME = 30
 # appmenu-gtk-module hides an application's menu bar while a program owns this name on D-Bus, and shows it
 # again when the name is let go. It doesn't need anything else from that program.
 REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
@@ -200,18 +202,53 @@ class RemoteMenu:
         self.opened = []     # the submenus told that they're open
         self.choices = {}    # an item's path, as the buffet menu reports it: (action group, action, target)
         self.accels = {}     # shortcuts the menu doesn't include, by the actions' detailed names (window_accels())
+        # The menus as last converted by menus(), with the shortcuts they were converted with and when. They're
+        # converted again when the application changes its menu or its actions, which it tells as it does
+        self.converted = None
+        self.converted_accels = None
+        self.converted_at = 0
+        self.changed = True
+        self.watched = set()   # the models whose changes are watched, by id
+        self.openers = set()   # the submenus' actions, whose changes are Buffet Menu's own: (group, name)
+        for group in self.groups.values():
+            for signal in ("action-added", "action-removed", "action-enabled-changed"):
+                group.connect(signal, self.on_changed)
+            group.connect("action-state-changed", self.on_state_changed)
+        self.watch(self.model)
+
+    def watch(self, model):
+        if id(model) not in self.watched:
+            self.watched.add(id(model))
+            model.connect("items-changed", self.on_changed)
+
+    def on_changed(self, *_args):
+        self.changed = True
+
+    def on_state_changed(self, group, name, _state):
+        # Opening and closing the submenus changes their actions' states: that's not a change to the menu
+        if (group, name) not in self.openers:
+            self.changed = True
 
     def load(self):
         """Fetches the whole menu. The module only fills a submenu once it's told that it's opening, so
         this opens each one in turn, until the menu stops growing."""
         for group in self.groups.values():
             group.list_actions()
-        end = time.monotonic() + LOAD_TIMEOUT
+        self.wait_for_application()
+        started = time.monotonic()
         last, steady = -1, 0
-        while time.monotonic() < end and steady < 3:
+        # Until the menu has stopped growing: twice the same number of items, once the application has answered.
+        # An empty menu is given half a second to arrive.
+        while time.monotonic() < started + LOAD_TIMEOUT and \
+                (steady < 2 or (last == 0 and time.monotonic() < started + 0.5)):
             count = self.open_all()
-            spin(0.1)
-            steady = steady + 1 if count == last else 0
+            self.wait_for_application()
+            if count == last:
+                steady += 1
+            else:
+                steady = 0
+                # The application may fill a submenu a little later: a moment for it, while it's still growing
+                spin(0.01)
             last = count
         self.close_all()
 
@@ -255,18 +292,29 @@ class RemoteMenu:
             opener = attribute(model, index, "submenu-action")
             group, name = self.action(opener) if opener else (None, None)
             if group is not None and (group, name) not in self.opened:
+                self.openers.add((group, name))
                 self.opened.append((group, name))
                 group.change_action_state(name, GLib.Variant("b", True))
             links = model.iterate_item_links(index)
             while links.next():
                 submenu = links.get_value()
+                self.watch(submenu)
                 self.found.append(submenu)
                 count += self.open_submenus(submenu)
         return count
 
     def menus(self):
-        """The application's menus, as (title, entries), in the form of buffet_menu_test.XED_MENUS."""
-        return [(title, self.entries(submenu, [buffet.plain(title)])) for title, submenu in self.top(self.model)]
+        """The application's menus, as (title, entries), in the form of buffet_menu_test.XED_MENUS: as converted
+        last time, unless they've changed since."""
+        if self.changed or self.converted is None or self.converted_accels != self.accels or \
+                time.monotonic() - self.converted_at > CONVERTED_TIME:
+            self.changed = False
+            self.choices = {}
+            self.converted = [(title, self.entries(submenu, [buffet.plain(title)]))
+                              for title, submenu in self.top(self.model)]
+            self.converted_accels = dict(self.accels)
+            self.converted_at = time.monotonic()
+        return self.converted
 
     def top(self, model):
         found = []

@@ -21,6 +21,7 @@
 #define SERVICE_PATH "/io/github/xlcheese/BuffetMenu"
 #define HEADER_PROPERTY "_BUFFET_MENU_HEADER"
 #define ACCELS_PROPERTY "_BUFFET_MENU_ACCELS"
+#define ICON_NAME "buffet-menu-symbolic"
 
 static void (*original_realize) (GtkWidget *widget);
 
@@ -135,7 +136,8 @@ static void
 on_window_mapped (GtkWidget *window, gpointer data)
 {
   g_signal_handlers_disconnect_by_func (window, on_window_mapped, data);
-  g_timeout_add_seconds (1, load_menus, g_object_ref (window));
+  /* A moment for the application to publish its menus */
+  g_timeout_add (250, load_menus, g_object_ref (window));
 }
 
 /* The application's first main window, a few seconds after it appeared (an application can add its menu bar
@@ -193,11 +195,29 @@ on_title_changed (GtkWindow *window, GParamSpec *pspec, GtkHeaderBar *header)
     gtk_header_bar_set_title (header, title);
 }
 
+/* Buffet Menu's icon, which it puts in the user's icons. Some applications use an icon theme of their own that
+ * doesn't look there (Inkscape): the icon's folder is added to where their icon theme looks */
+static void
+find_icon (GtkWidget *widget)
+{
+  GtkIconTheme *theme = gtk_icon_theme_get_for_screen (gtk_widget_get_screen (widget));
+  gchar *folder;
+
+  if (gtk_icon_theme_has_icon (theme, ICON_NAME))
+    return;
+  folder = g_build_filename (g_get_user_data_dir (), "icons", "hicolor", "scalable", "apps", NULL);
+  gtk_icon_theme_append_search_path (theme, folder);
+  g_free (folder);
+}
+
 /* The Buffet button, at the end of a header bar */
 static void
 add_buffet_button (GtkWindow *window, GtkWidget *header)
 {
-  GtkWidget *button = gtk_button_new_from_icon_name ("buffet-menu-symbolic", GTK_ICON_SIZE_BUTTON);
+  GtkWidget *button;
+
+  find_icon (GTK_WIDGET (window));
+  button = gtk_button_new_from_icon_name (ICON_NAME, GTK_ICON_SIZE_BUTTON);
 
   gtk_widget_set_tooltip_text (button, "Menu");
   gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
