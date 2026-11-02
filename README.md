@@ -100,7 +100,8 @@ to see all its menus at once.
 - **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
   starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
   menu panels read it, and with Buffet Menu's own module (`buffet-headerbar.c`), which gives its main
-  window the header bar. `−` deletes the copy, and the application is as it was.
+  window the header bar and hides its menu bar while Buffet Menu runs (other applications keep theirs).
+  `−` deletes the copy, and the application is as it was.
 - **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
   Tried with Xed, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks and Xcalculator. The list only offers
   GTK3 applications; one that turns out to have a header bar of its own (and no menu bar behind it) or no

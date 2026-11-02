@@ -74,6 +74,7 @@ LAUNCHER_SCRIPT = """#!/bin/sh
 BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
+export BUFFET_MENU_HEADER_BAR={header_bar}
 export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
 exec "$@"
 """
@@ -262,13 +263,14 @@ def key_value(keyfile, group, key):
 
 
 def write_launcher(header_bar=True):
-    """The launcher, with the header bar module if it's wanted and built."""
+    """The launcher, with Buffet Menu's module if it's built: it hides the menu bars while Buffet Menu runs, and
+    adds the header bar if it's wanted."""
     modules = ["appmenu-gtk-module"]
-    if header_bar and os.path.exists(HEADER_BAR_MODULE):
+    if os.path.exists(HEADER_BAR_MODULE):
         modules.insert(0, HEADER_BAR_MODULE)
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(LAUNCHER, "w", encoding="utf-8") as target:
-        target.write(LAUNCHER_SCRIPT.format(modules=":".join(modules)))
+        target.write(LAUNCHER_SCRIPT.format(modules=":".join(modules), header_bar=1 if header_bar else 0))
     os.chmod(LAUNCHER, 0o755)
 
 
@@ -403,10 +405,12 @@ class BuffetMenuApp(Gtk.Application):
             self.add_action(action)
         # Keeps running when the settings window closes
         self.hold()
-        # The module hides an application's menu bar while a program owns this name, and shows it again
-        # when the name is let go: when the service stops
-        self.registrar = Gio.bus_own_name(Gio.BusType.SESSION, remote.REGISTRAR_NAME, Gio.BusNameOwnerFlags.NONE,
-                                          None, None, None)
+        # Buffet Menu's module hides the applications' menu bars while Buffet Menu runs. Without it (not built),
+        # appmenu-gtk-module hides them while a program owns this name, which Buffet Menu does then. Other
+        # applications hide their menu bars too while it's owned, for a global menu (LibreOffice, Qt applications)
+        if not os.path.exists(HEADER_BAR_MODULE):
+            self.registrar = Gio.bus_own_name(Gio.BusType.SESSION, remote.REGISTRAR_NAME,
+                                              Gio.BusNameOwnerFlags.NONE, None, None, None)
         if Keybinder is not None:
             Keybinder.init()
             self.bind_shortcut(self.settings["shortcut"])
