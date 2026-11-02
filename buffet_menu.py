@@ -346,15 +346,14 @@ class BuffetMenuApp(Gtk.Application):
             return False
         started = time.monotonic()
         xid = xid or remote.active_window()
-        bus_name = remote.window_property(xid, "_GTK_UNIQUE_BUS_NAME") if xid else None
-        path = remote.window_property(xid, "_GTK_MENUBAR_OBJECT_PATH") if xid else None
-        if not bus_name or not path:
+        published = remote.window_menu(xid)
+        if published is None:
             self.notify("This window doesn't have the Buffet menu",
                         "Add its application in Buffet Menu's settings, then close and reopen it.")
             return False
         app = window_app(xid)
         entry = app_settings(self.settings, app)
-        menus_published, menus = self.menus_of(bus_name, path)
+        menus_published, menus = self.menus_of(published)
         if not menus:
             entry["no-menu-bar"] = True
             self.changed()
@@ -382,27 +381,27 @@ class BuffetMenuApp(Gtk.Application):
             print(f"{app}: menu shown in {time.monotonic() - started:.2f} s", flush=True)
         return False
 
-    def menus_of(self, bus_name, path):
-        """A window's menus: loaded before and brought up to date, or else loaded now."""
-        published = self.loaded.pop((bus_name, path), None)
+    def menus_of(self, where):
+        """A window's menus, from where they're published on D-Bus (see buffet_remote.window_menu()): loaded
+        before and brought up to date, or else loaded now."""
+        published = self.loaded.pop(where, None)
         if published is not None:
             published.refresh()
             menus = published.menus()
         if published is None or not menus:
-            published = remote.RemoteMenu(bus_name, path)
+            published = remote.RemoteMenu(*where)
             published.load()
             menus = published.menus()
-        self.loaded[(bus_name, path)] = published
+        self.loaded[where] = published
         # The windows used last, a few of them
         while len(self.loaded) > LOADED_WINDOWS:
             del self.loaded[next(iter(self.loaded))]
         return published, menus
 
     def load_window(self, xid):
-        bus_name = remote.window_property(xid, "_GTK_UNIQUE_BUS_NAME")
-        path = remote.window_property(xid, "_GTK_MENUBAR_OBJECT_PATH")
-        if bus_name and path and (bus_name, path) not in self.loaded:
-            self.menus_of(bus_name, path)
+        where = remote.window_menu(xid)
+        if where is not None and where not in self.loaded:
+            self.menus_of(where)
         return False
 
     def on_menu_closed(self):

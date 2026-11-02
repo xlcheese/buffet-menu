@@ -4,7 +4,8 @@
  * an application's main window is first shown, it gives the window a header bar: the window's title, its
  * buttons, and the Buffet button, which asks Buffet Menu to show the window's menus. The window keeps where
  * the header bar and the button are in the _BUFFET_MENU_HEADER property, for Buffet Menu to put the menu
- * under them.
+ * under them. Some applications, such as Inkscape and GIMP, add their menu bar to the window after that:
+ * the window gets its header bar then.
  *
  * Build: gcc -shared -fPIC -O2 -o libbuffet-headerbar.so buffet-headerbar.c $(pkg-config --cflags --libs gtk+-3.0)
  */
@@ -41,6 +42,11 @@ wants_header_bar (GtkWindow *window)
       gtk_window_get_transient_for (window) != NULL || !gtk_window_get_decorated (window))
     return FALSE;
   gtk_container_forall (GTK_CONTAINER (window), find_menu_bar, &found);
+  /* Or the application's menu bar, that GTK shows in its windows, or publishes instead with appmenu-gtk-module
+   * (Inkscape's, for example) */
+  if (!found && GTK_IS_APPLICATION_WINDOW (window) && gtk_window_get_application (window) != NULL)
+    found = gtk_application_get_menubar (gtk_window_get_application (window)) != NULL &&
+            gtk_application_window_get_show_menubar (GTK_APPLICATION_WINDOW (window));
   return found;
 }
 
@@ -147,6 +153,58 @@ buffet_realize (GtkWidget *widget)
   original_realize (widget);
 }
 
+/* A menu bar added to a window that had none: the window gets its header bar now, once GTK is done adding */
+static gboolean
+add_header_bar_later (gpointer data)
+{
+  GtkWindow *window = data;
+  GtkWidget *widget = data;
+  gboolean visible, maximized;
+  gint x, y;
+
+  g_object_set_data (G_OBJECT (window), "buffet-pending", NULL);
+  if (wants_header_bar (window))
+    {
+      /* GTK only takes a header bar on a window that isn't realized: one on screen goes away and comes back */
+      visible = gtk_widget_get_visible (widget);
+      maximized = gtk_window_is_maximized (window);
+      gtk_window_get_position (window, &x, &y);
+      if (gtk_widget_get_realized (widget))
+        {
+          gtk_widget_hide (widget);
+          gtk_widget_unrealize (widget);
+        }
+      add_header_bar (window);
+      if (visible)
+        {
+          gtk_window_move (window, x, y);
+          if (maximized)
+            gtk_window_maximize (window);
+          gtk_widget_show (widget);
+        }
+    }
+  g_object_unref (window);
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean
+on_hierarchy_changed (GSignalInvocationHint *hint, guint count, const GValue *values, gpointer data)
+{
+  GtkWidget *widget = g_value_get_object (&values[0]);
+  GtkWidget *toplevel;
+
+  if (!GTK_IS_MENU_BAR (widget))
+    return TRUE;
+  toplevel = gtk_widget_get_toplevel (widget);
+  if (GTK_IS_WINDOW (toplevel) && g_object_get_data (G_OBJECT (toplevel), "buffet-pending") == NULL &&
+      wants_header_bar (GTK_WINDOW (toplevel)))
+    {
+      g_object_set_data (G_OBJECT (toplevel), "buffet-pending", GINT_TO_POINTER (TRUE));
+      g_idle_add (add_header_bar_later, g_object_ref (toplevel));
+    }
+  return TRUE;
+}
+
 /* Uses buffet_realize for the kinds of window whose classes were set up before the module was loaded */
 static void
 replace_realize (GType type)
@@ -172,4 +230,6 @@ gtk_module_init (gint *argc, gchar ***argv)
     return;
   original_realize = klass->realize;
   replace_realize (GTK_TYPE_WINDOW);
+  g_signal_add_emission_hook (g_signal_lookup ("hierarchy-changed", GTK_TYPE_WIDGET), 0, on_hierarchy_changed,
+                              NULL, NULL);
 }

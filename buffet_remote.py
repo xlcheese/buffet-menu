@@ -65,6 +65,19 @@ def window_property(xid, name):
     return value[1:-1] if value.startswith('"') else None
 
 
+def window_menu(xid):
+    """Where a window's menu is on D-Bus: (bus name, menu path, application path, window path), or None. The
+    application's and window's paths are where GTK publishes their actions, for a menu it publishes itself."""
+    if not xid:
+        return None
+    bus_name = window_property(xid, "_GTK_UNIQUE_BUS_NAME")
+    path = window_property(xid, "_GTK_MENUBAR_OBJECT_PATH")
+    if not bus_name or not path:
+        return None
+    return (bus_name, path, window_property(xid, "_GTK_APPLICATION_OBJECT_PATH"),
+            window_property(xid, "_GTK_WINDOW_OBJECT_PATH"))
+
+
 def xprop(*args):
     try:
         return subprocess.run(["xprop", *args], capture_output=True, text=True).stdout
@@ -81,9 +94,10 @@ def spin(seconds):
         time.sleep(0.005)
 
 
-def action_name(name):
-    """An action's name without its group, as in "unity.-Copy"."""
-    return name.split(".", 1)[1] if "." in name else name
+def split_action(name):
+    """An action's group and name: "unity.-Copy" is in the group the module publishes, "app.quit" and
+    "win.close" in the application's and the window's, when GTK publishes the menu itself."""
+    return tuple(name.split(".", 1)) if "." in name else ("unity", name)
 
 
 def attribute(model, index, name):
@@ -106,19 +120,25 @@ def tidy(entries):
 class RemoteMenu:
     """The menu bar of another application's window, as published on D-Bus by appmenu-gtk-module."""
 
-    def __init__(self, bus_name, path):
+    def __init__(self, bus_name, path, application_path=None, window_path=None):
         self.connection = Gio.bus_get_sync(Gio.BusType.SESSION)
         self.model = Gio.DBusMenuModel.get(self.connection, bus_name, path)
-        self.actions = Gio.DBusActionGroup.get(self.connection, bus_name, path)
+        # The actions of the menu items, by group: those the module publishes with the menu, and the
+        # application's and the window's, for a menu that GTK publishes itself (Inkscape's, for example)
+        self.groups = {"unity": Gio.DBusActionGroup.get(self.connection, bus_name, path)}
+        for group, group_path in (("app", application_path), ("win", window_path)):
+            if group_path:
+                self.groups[group] = Gio.DBusActionGroup.get(self.connection, bus_name, group_path)
         self.submenus = []   # kept, so that D-Bus keeps sending their items
         self.found = []      # the submenus found while opening them, to keep from then on
         self.opened = []     # the submenus told that they're open
-        self.choices = {}    # an item's path, as the buffet menu reports it: (action, target)
+        self.choices = {}    # an item's path, as the buffet menu reports it: (action group, action, target)
 
     def load(self):
         """Fetches the whole menu. The module only fills a submenu once it's told that it's opening, so
         this opens each one in turn, until the menu stops growing."""
-        self.actions.list_actions()
+        for group in self.groups.values():
+            group.list_actions()
         end = time.monotonic() + LOAD_TIMEOUT
         last, steady = -1, 0
         while time.monotonic() < end and steady < 3:
@@ -143,17 +163,18 @@ class RemoteMenu:
         return count
 
     def close_all(self):
-        for name in self.opened:
-            self.actions.change_action_state(name, GLib.Variant("b", False))
+        for group, name in self.opened:
+            group.change_action_state(name, GLib.Variant("b", False))
         self.opened = []
 
     def open_submenus(self, model):
         count = model.get_n_items()
         for index in range(model.get_n_items()):
             opener = attribute(model, index, "submenu-action")
-            if opener and action_name(opener) not in self.opened and self.actions.has_action(action_name(opener)):
-                self.opened.append(action_name(opener))
-                self.actions.change_action_state(action_name(opener), GLib.Variant("b", True))
+            group, name = self.action(opener) if opener else (None, None)
+            if group is not None and (group, name) not in self.opened:
+                self.opened.append((group, name))
+                group.change_action_state(name, GLib.Variant("b", True))
             links = model.iterate_item_links(index)
             while links.next():
                 submenu = links.get_value()
@@ -189,10 +210,10 @@ class RemoteMenu:
             if submenu is not None:
                 entries.append(("sub", label, self.entries(submenu, path + [buffet.plain(label)])))
                 continue
-            name = action_name(attribute(model, index, "action") or "")
+            group, name = self.action(attribute(model, index, "action") or "")
             target = model.get_item_attribute_value(index, "target", None)
             accel = attribute(model, index, "accel") or attribute(model, index, "x-canonical-accel")
-            state = self.actions.get_action_state(name) if name and self.actions.has_action(name) else None
+            state = group.get_action_state(name) if group is not None else None
             if state is not None and target is None and state.get_type_string() == "b":
                 entries.append(("check", label, accel, state.get_boolean()))
             elif state is not None and target is not None:
@@ -200,14 +221,20 @@ class RemoteMenu:
                 entries.append(("file", buffet.plain(label), accel, state.equal(target)))
             else:
                 entries.append(("item", label, accel))
-            self.choices[" → ".join(path + [buffet.plain(label)])] = (name, target)
+            self.choices[" → ".join(path + [buffet.plain(label)])] = (group, name, target)
         return tidy(entries)
+
+    def action(self, full_name):
+        """The action group and name of a menu item's action, or (None, None) if there's no such action."""
+        prefix, name = split_action(full_name)
+        group = self.groups.get(prefix)
+        return (group, name) if name and group is not None and group.has_action(name) else (None, None)
 
     def choose(self, path):
         """Runs the item in the application, as if it had been chosen in its own menu."""
-        name, target = self.choices.get(path, (None, None))
-        if name:
-            self.actions.activate_action(name, target)
+        group, name, target = self.choices.get(path, (None, None, None))
+        if group is not None:
+            group.activate_action(name, target)
             self.connection.flush_sync(None)
 
 
@@ -278,11 +305,10 @@ def main():
         return
 
     xid = args.window or active_window()
-    bus_name = window_property(xid, "_GTK_UNIQUE_BUS_NAME") if xid else None
-    path = window_property(xid, "_GTK_MENUBAR_OBJECT_PATH") if xid else None
-    if not bus_name or not path:
+    published = window_menu(xid)
+    if published is None:
         sys.exit("This window doesn't publish its menus: start the application with GTK_MODULES=appmenu-gtk-module")
-    remote = RemoteMenu(bus_name, path)
+    remote = RemoteMenu(*published)
     remote.load()
     menus = remote.menus()
     if not menus:
