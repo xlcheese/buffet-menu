@@ -582,11 +582,11 @@ class BuffetMenu:
 
     def prepare(self):
         """Lays the menu out without showing it, so that it shows at once when it opens: GTK measures the
-        items, loads the fonts and sets up the pop-up's window now."""
+        items and loads the fonts now. (The pop-up's window isn't set up yet: hidden, it would be given a size
+        too small for its separators.)"""
         self.style_headings()
         self.lay_out()
-        self.place()
-        self.popup.realize()
+        self.popup.get_preferred_size()
 
     def close(self):
         if not self.is_open:
