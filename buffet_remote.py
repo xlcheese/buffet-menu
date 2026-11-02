@@ -37,6 +37,8 @@ REFRESH_TIME = 0.05
 REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
 # Where the header bar module keeps the position of a window's header bar and Buffet button
 HEADER_PROPERTY = "_BUFFET_MENU_HEADER"
+# Where it keeps the keyboard shortcuts the application registered with GTK, as "action=shortcut|…"
+ACCELS_PROPERTY = "_BUFFET_MENU_ACCELS"
 
 
 def run_registrar():
@@ -76,6 +78,18 @@ def window_menu(xid):
         return None
     return (bus_name, path, window_property(xid, "_GTK_APPLICATION_OBJECT_PATH"),
             window_property(xid, "_GTK_WINDOW_OBJECT_PATH"))
+
+
+def window_accels(xid):
+    """The keyboard shortcuts of a window's application, by their actions' detailed names, as the header bar
+    module keeps them: for a menu that GTK publishes itself, which doesn't include them."""
+    text = window_property(xid, ACCELS_PROPERTY) or ""
+    accels = {}
+    for pair in text.replace('\\"', '"').split("|"):
+        action, _equals, accel = pair.rpartition("=")
+        if action and accel:
+            accels[action] = accel
+    return accels
 
 
 def xprop(*args):
@@ -133,6 +147,7 @@ class RemoteMenu:
         self.found = []      # the submenus found while opening them, to keep from then on
         self.opened = []     # the submenus told that they're open
         self.choices = {}    # an item's path, as the buffet menu reports it: (action group, action, target)
+        self.accels = {}     # shortcuts the menu doesn't include, by the actions' detailed names (window_accels())
 
     def load(self):
         """Fetches the whole menu. The module only fills a submenu once it's told that it's opening, so
@@ -210,9 +225,11 @@ class RemoteMenu:
             if submenu is not None:
                 entries.append(("sub", label, self.entries(submenu, path + [buffet.plain(label)])))
                 continue
-            group, name = self.action(attribute(model, index, "action") or "")
+            full_name = attribute(model, index, "action") or ""
+            group, name = self.action(full_name)
             target = model.get_item_attribute_value(index, "target", None)
-            accel = attribute(model, index, "accel") or attribute(model, index, "x-canonical-accel")
+            accel = attribute(model, index, "accel") or attribute(model, index, "x-canonical-accel") or \
+                (self.accels.get(Gio.Action.print_detailed_name(full_name, target)) if full_name else None)
             state = group.get_action_state(name) if group is not None else None
             if state is not None and target is None and state.get_type_string() == "b":
                 entries.append(("check", label, accel, state.get_boolean()))
@@ -309,6 +326,7 @@ def main():
     if published is None:
         sys.exit("This window doesn't publish its menus: start the application with GTK_MODULES=appmenu-gtk-module")
     remote = RemoteMenu(*published)
+    remote.accels = window_accels(xid)
     remote.load()
     menus = remote.menus()
     if not menus:

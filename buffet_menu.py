@@ -353,7 +353,7 @@ class BuffetMenuApp(Gtk.Application):
             return False
         app = window_app(xid)
         entry = app_settings(self.settings, app)
-        menus_published, menus = self.menus_of(published)
+        menus_published, menus = self.menus_of(published, remote.window_accels(xid))
         if not menus:
             entry["no-menu-bar"] = True
             self.changed()
@@ -381,15 +381,17 @@ class BuffetMenuApp(Gtk.Application):
             print(f"{app}: menu shown in {time.monotonic() - started:.2f} s", flush=True)
         return False
 
-    def menus_of(self, where):
+    def menus_of(self, where, accels):
         """A window's menus, from where they're published on D-Bus (see buffet_remote.window_menu()): loaded
         before and brought up to date, or else loaded now."""
         published = self.loaded.pop(where, None)
         if published is not None:
+            published.accels = accels
             published.refresh()
             menus = published.menus()
         if published is None or not menus:
             published = remote.RemoteMenu(*where)
+            published.accels = accels
             published.load()
             menus = published.menus()
         self.loaded[where] = published
@@ -401,7 +403,7 @@ class BuffetMenuApp(Gtk.Application):
     def load_window(self, xid):
         where = remote.window_menu(xid)
         if where is not None and where not in self.loaded:
-            self.menus_of(where)
+            self.menus_of(where, remote.window_accels(xid))
         return False
 
     def on_menu_closed(self):

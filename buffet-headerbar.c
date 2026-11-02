@@ -5,7 +5,9 @@
  * buttons, and the Buffet button, which asks Buffet Menu to show the window's menus. The window keeps where
  * the header bar and the button are in the _BUFFET_MENU_HEADER property, for Buffet Menu to put the menu
  * under them. Some applications, such as Inkscape and GIMP, add their menu bar to the window after that:
- * the window gets its header bar then.
+ * the window gets its header bar then. It also keeps the keyboard shortcuts that the application registered
+ * with GTK in the _BUFFET_MENU_ACCELS property: a menu that GTK publishes itself (Inkscape's, for example)
+ * doesn't include them.
  *
  * Build: gcc -shared -fPIC -O2 -o libbuffet-headerbar.so buffet-headerbar.c $(pkg-config --cflags --libs gtk+-3.0)
  */
@@ -16,6 +18,7 @@
 #define SERVICE "io.github.xlcheese.BuffetMenu"
 #define SERVICE_PATH "/io/github/xlcheese/BuffetMenu"
 #define HEADER_PROPERTY "_BUFFET_MENU_HEADER"
+#define ACCELS_PROPERTY "_BUFFET_MENU_ACCELS"
 
 static void (*original_realize) (GtkWidget *widget);
 
@@ -77,10 +80,39 @@ on_buffet_clicked (GtkButton *button, gpointer data)
   ask_service (GTK_WIDGET (button), "show-window");
 }
 
+/* The application's keyboard shortcuts, as "action=shortcut|action=shortcut…", with the actions' detailed names */
+static void
+publish_accels (GtkWidget *widget)
+{
+  GtkApplication *application = gtk_window_get_application (GTK_WINDOW (widget));
+  GdkWindow *window = gtk_widget_get_window (widget);
+  gchar **actions, **accels;
+  GString *text;
+  guint i;
+
+  if (application == NULL || window == NULL)
+    return;
+  text = g_string_new (NULL);
+  actions = gtk_application_list_action_descriptions (application);
+  for (i = 0; actions[i] != NULL; i++)
+    {
+      accels = gtk_application_get_accels_for_action (application, actions[i]);
+      if (accels[0] != NULL)
+        g_string_append_printf (text, "%s%s=%s", text->len ? "|" : "", actions[i], accels[0]);
+      g_strfreev (accels);
+    }
+  g_strfreev (actions);
+  gdk_property_change (window, gdk_atom_intern_static_string (ACCELS_PROPERTY),
+                       gdk_atom_intern_static_string ("UTF8_STRING"), 8, GDK_PROP_MODE_REPLACE,
+                       (const guchar *) text->str, text->len);
+  g_string_free (text, TRUE);
+}
+
 /* Once the window is on screen and has published its menus: Buffet Menu loads them, for the first click */
 static gboolean
 load_menus (gpointer window)
 {
+  publish_accels (GTK_WIDGET (window));
   ask_service (GTK_WIDGET (window), "load-window");
   g_object_unref (window);
   return G_SOURCE_REMOVE;
@@ -141,7 +173,7 @@ add_header_bar (GtkWindow *window)
   g_signal_connect_after (header, "size-allocate", G_CALLBACK (on_header_allocated), button);
   gtk_widget_show_all (header);
   gtk_window_set_titlebar (window, header);
-  g_signal_connect (window, "map", G_CALLBACK (on_window_mapped), NULL);
+  g_object_set_data (G_OBJECT (window), "buffet-header", header);
 }
 
 /* A window's realize, with the header bar first: GTK only takes a header bar before the window is realized */
@@ -151,6 +183,9 @@ buffet_realize (GtkWidget *widget)
   if (wants_header_bar (GTK_WINDOW (widget)))
     add_header_bar (GTK_WINDOW (widget));
   original_realize (widget);
+  /* A main window: once it's on screen, its shortcuts are kept, and Buffet Menu loads its menus */
+  if (g_object_get_data (G_OBJECT (widget), "buffet-header") != NULL || GTK_IS_APPLICATION_WINDOW (widget))
+    g_signal_connect (widget, "map", G_CALLBACK (on_window_mapped), NULL);
 }
 
 /* A menu bar added to a window that had none: the window gets its header bar now, once GTK is done adding */
