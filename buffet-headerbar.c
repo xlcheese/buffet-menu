@@ -7,7 +7,9 @@
  * under them. Some applications, such as Inkscape and GIMP, add their menu bar to the window after that:
  * the window gets its header bar then. It also keeps the keyboard shortcuts that the application registered
  * with GTK in the _BUFFET_MENU_ACCELS property: a menu that GTK publishes itself (Inkscape's, for example)
- * doesn't include them.
+ * doesn't include them. A window with a header bar of its own and a menu bar that's only published (gedit's) gets
+ * the Buffet button in its header bar. And it tells Buffet Menu when the application's first main window has a header bar of
+ * its own, or no menu bar: the application can't have the Buffet menu.
  *
  * Build: gcc -shared -fPIC -O2 -o libbuffet-headerbar.so buffet-headerbar.c $(pkg-config --cflags --libs gtk+-3.0)
  */
@@ -33,17 +35,21 @@ find_menu_bar (GtkWidget *widget, gpointer found)
     gtk_container_forall (GTK_CONTAINER (widget), find_menu_bar, found);
 }
 
-/* An application's main window: a normal window with a menu bar, not a dialog, and without a header bar */
+/* A normal window, not a dialog */
 static gboolean
-wants_header_bar (GtkWindow *window)
+is_main_window (GtkWindow *window)
+{
+  return !GTK_IS_DIALOG (window) && gtk_window_get_window_type (window) == GTK_WINDOW_TOPLEVEL &&
+         gtk_window_get_type_hint (window) == GDK_WINDOW_TYPE_HINT_NORMAL &&
+         gtk_window_get_transient_for (window) == NULL && gtk_window_get_decorated (window);
+}
+
+/* Whether a window has a menu bar: its own, or the application's */
+static gboolean
+has_menu_bar (GtkWindow *window)
 {
   gboolean found = FALSE;
 
-  if (gtk_window_get_titlebar (window) != NULL || GTK_IS_DIALOG (window) ||
-      gtk_window_get_window_type (window) != GTK_WINDOW_TOPLEVEL ||
-      gtk_window_get_type_hint (window) != GDK_WINDOW_TYPE_HINT_NORMAL ||
-      gtk_window_get_transient_for (window) != NULL || !gtk_window_get_decorated (window))
-    return FALSE;
   gtk_container_forall (GTK_CONTAINER (window), find_menu_bar, &found);
   /* Or the application's menu bar, that GTK shows in its windows, or publishes instead with appmenu-gtk-module
    * (Inkscape's, for example) */
@@ -51,6 +57,13 @@ wants_header_bar (GtkWindow *window)
     found = gtk_application_get_menubar (gtk_window_get_application (window)) != NULL &&
             gtk_application_window_get_show_menubar (GTK_APPLICATION_WINDOW (window));
   return found;
+}
+
+/* An application's main window: a normal window with a menu bar, not a dialog, and without a header bar */
+static gboolean
+wants_header_bar (GtkWindow *window)
+{
+  return gtk_window_get_titlebar (window) == NULL && is_main_window (window) && has_menu_bar (window);
 }
 
 /* Activates one of Buffet Menu's actions for a window: show-window or load-window, with its X11 id */
@@ -125,6 +138,28 @@ on_window_mapped (GtkWidget *window, gpointer data)
   g_timeout_add_seconds (1, load_menus, g_object_ref (window));
 }
 
+/* The application's first main window, a few seconds after it appeared (an application can add its menu bar
+ * late): if it has a header bar of its own, or no menu bar, Buffet Menu is told that the application can't have
+ * the Buffet menu */
+static gboolean
+check_first_window (gpointer data)
+{
+  GtkWindow *window = data;
+
+  if (gtk_widget_get_mapped (GTK_WIDGET (window)) &&
+      g_object_get_data (G_OBJECT (window), "buffet-header") == NULL && !has_menu_bar (window))
+    ask_service (GTK_WIDGET (window), gtk_window_get_titlebar (window) != NULL ? "own-header-bar" : "no-menu-bar");
+  g_object_unref (window);
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_first_window_mapped (GtkWidget *window, gpointer data)
+{
+  g_signal_handlers_disconnect_by_func (window, on_first_window_mapped, data);
+  g_timeout_add_seconds (3, check_first_window, g_object_ref (window));
+}
+
 /* Keeps where the header bar and the Buffet button are in the window, as "x y width height" for each */
 static void
 on_header_allocated (GtkWidget *header, GdkRectangle *allocation, GtkWidget *button)
@@ -158,34 +193,78 @@ on_title_changed (GtkWindow *window, GParamSpec *pspec, GtkHeaderBar *header)
     gtk_header_bar_set_title (header, title);
 }
 
+/* The Buffet button, at the end of a header bar */
+static void
+add_buffet_button (GtkWindow *window, GtkWidget *header)
+{
+  GtkWidget *button = gtk_button_new_from_icon_name ("buffet-menu-symbolic", GTK_ICON_SIZE_BUTTON);
+
+  gtk_widget_set_tooltip_text (button, "Menu");
+  gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
+  g_signal_connect (button, "clicked", G_CALLBACK (on_buffet_clicked), NULL);
+  gtk_header_bar_pack_end (GTK_HEADER_BAR (header), button);
+  gtk_widget_show (button);
+  g_signal_connect_after (header, "size-allocate", G_CALLBACK (on_header_allocated), button);
+  g_object_set_data (G_OBJECT (window), "buffet-header", header);
+}
+
 static void
 add_header_bar (GtkWindow *window)
 {
   GtkWidget *header = gtk_header_bar_new ();
-  GtkWidget *button = gtk_button_new_from_icon_name ("buffet-menu-symbolic", GTK_ICON_SIZE_BUTTON);
 
   gtk_header_bar_set_show_close_button (GTK_HEADER_BAR (header), TRUE);
   gtk_header_bar_set_title (GTK_HEADER_BAR (header), gtk_window_get_title (window));
   g_signal_connect (window, "notify::title", G_CALLBACK (on_title_changed), header);
-  gtk_widget_set_tooltip_text (button, "Menu");
-  g_signal_connect (button, "clicked", G_CALLBACK (on_buffet_clicked), NULL);
-  gtk_header_bar_pack_end (GTK_HEADER_BAR (header), button);
-  g_signal_connect_after (header, "size-allocate", G_CALLBACK (on_header_allocated), button);
   gtk_widget_show_all (header);
+  add_buffet_button (window, header);
   gtk_window_set_titlebar (window, header);
-  g_object_set_data (G_OBJECT (window), "buffet-header", header);
+}
+
+/* The last header bar in a widget: the one on the right, in a title bar made of several (gedit's) */
+static void
+find_header_bar (GtkWidget *widget, gpointer found)
+{
+  if (GTK_IS_HEADER_BAR (widget))
+    *(GtkWidget **) found = widget;
+  else if (GTK_IS_CONTAINER (widget))
+    gtk_container_forall (GTK_CONTAINER (widget), find_header_bar, found);
+}
+
+/* A window with a header bar of its own, and a menu bar that's only published (gedit's, for example): its
+ * header bar gets the Buffet button */
+static GtkWidget *
+own_header_bar (GtkWindow *window)
+{
+  GtkWidget *titlebar = gtk_window_get_titlebar (window), *header = NULL;
+
+  if (titlebar == NULL || g_object_get_data (G_OBJECT (window), "buffet-header") != NULL ||
+      !is_main_window (window) || !has_menu_bar (window))
+    return NULL;
+  find_header_bar (titlebar, &header);
+  return header;
 }
 
 /* A window's realize, with the header bar first: GTK only takes a header bar before the window is realized */
 static void
 buffet_realize (GtkWidget *widget)
 {
+  static gboolean first_window = TRUE;
+  GtkWidget *header;
+
   if (wants_header_bar (GTK_WINDOW (widget)))
     add_header_bar (GTK_WINDOW (widget));
+  else if ((header = own_header_bar (GTK_WINDOW (widget))) != NULL)
+    add_buffet_button (GTK_WINDOW (widget), header);
   original_realize (widget);
   /* A main window: once it's on screen, its shortcuts are kept, and Buffet Menu loads its menus */
   if (g_object_get_data (G_OBJECT (widget), "buffet-header") != NULL || GTK_IS_APPLICATION_WINDOW (widget))
     g_signal_connect (widget, "map", G_CALLBACK (on_window_mapped), NULL);
+  if (first_window && is_main_window (GTK_WINDOW (widget)))
+    {
+      first_window = FALSE;
+      g_signal_connect (widget, "map", G_CALLBACK (on_first_window_mapped), NULL);
+    }
 }
 
 /* A menu bar added to a window that had none: the window gets its header bar now, once GTK is done adding */

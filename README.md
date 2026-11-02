@@ -102,8 +102,10 @@ to see all its menus at once.
   menu panels read it, and with Buffet Menu's own module (`buffet-headerbar.c`), which gives its main
   window the header bar. `−` deletes the copy, and the application is as it was.
 - **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
-  Tried with Xed, GIMP 3, Inkscape 1.x, Code::Blocks and Xcalculator. Not with Flatpak applications, applications with a header
-  bar menu, or Wayland. Inkscape doesn't send its keyboard shortcuts with its menus, so they don't show.
+  Tried with Xed, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks and Xcalculator. The list only offers
+  GTK3 applications; one that turns out to have a header bar of its own (and no menu bar behind it) or no
+  menu bar is taken off the list when it first opens. Tick **Show all applications** to see the others,
+  and why they're left out. Not with GTK2 applications (GIMP 2.10), GTK4, Qt, Flatpak or Wayland.
 - **To stop it:** `python3 buffet_menu.py --quit`, or Quit from the panel icon's menu.
 
 ## License

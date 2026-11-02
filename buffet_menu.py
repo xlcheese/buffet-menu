@@ -16,8 +16,10 @@ Needs: sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils
 import glob
 import json
 import os
+import re
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 
@@ -60,7 +62,6 @@ LOADED_WINDOWS = 8
 DEBUG = bool(os.environ.get("BUFFET_MENU_DEBUG"))
 # Buffet Menu's own module, built with build.sh: a header bar with the Buffet button, in the applications' windows
 HEADER_BAR_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libbuffet-headerbar.so")
-GTK2_MODULE_FILES = ("/usr/lib/*/gtk-2.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-2.0/modules/libappmenu-gtk-module.so")
 MODULE_FILES = ("/usr/lib/*/gtk-3.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-3.0/modules/libappmenu-gtk-module.so")
 INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils"
 
@@ -68,16 +69,10 @@ INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11
 # the service which application it is, to use its settings
 LAUNCHER_SCRIPT = """#!/bin/sh
 # Written by Buffet Menu: starts an application with the Buffet menu
-MODULES="{modules}"
-# A GTK 2 application: only appmenu-gtk-module, which has a GTK 2 version, and no header bar
-if [ "$1" = "--gtk2" ]; then
-    MODULES="appmenu-gtk-module"
-    shift
-fi
 BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
-export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}$MODULES"
+export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
 exec "$@"
 """
 
@@ -108,6 +103,7 @@ def app_settings(settings, app):
         entry.setdefault(key, value)
     entry.setdefault("menus", None)
     entry.setdefault("no-menu-bar", False)
+    entry.setdefault("own-header-bar", False)
     return entry
 
 
@@ -120,8 +116,6 @@ def missing_packages():
         missing.append("gir1.2-keybinder-3.0 (for the keyboard shortcut)")
     if shutil.which("xprop") is None:
         missing.append("x11-utils (to find the active window)")
-    if any(is_gtk2_entry(app) for app in buffet_apps()) and not any(glob.glob(pattern) for pattern in GTK2_MODULE_FILES):
-        missing.append("appmenu-gtk2-module (to read the menus of GTK 2 applications, such as GIMP 2.10)")
     return missing
 
 
@@ -137,24 +131,111 @@ def can_use_buffet(info):
     return not (command.startswith(("flatpak ", "/usr/bin/flatpak ")) or "/snap/" in command)
 
 
-def is_gtk2(info):
-    """Whether an application is a GTK 2 one, such as GIMP 2.10: its program uses GTK 2's library."""
-    program = shutil.which(info.get_executable() or "")
-    try:
-        with open(program, "rb") as source:
-            return b"libgtk-x11-2.0.so" in source.read()
-    except (OSError, TypeError):
-        return False
+# Which toolkit a program uses, from the libraries it's linked to, or for a script, the GTK version it asks for
+TOOLKIT_LIBRARIES = (("gtk4", "libgtk-4.so"), ("gtk3", "libgtk-3.so"), ("gtk2", "libgtk-x11-2.0.so"), ("qt", "libQt"))
+GTK_VERSION = re.compile(r"""require_version\(\s*['"]Gtk['"]\s*,\s*['"](\d)""")
+PYTHON_IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_]\w*)", re.MULTILINE)
+SCRIPT_PATH = re.compile(r"(/(?:usr|opt)/[\w.+/-]+)")
+ADMIN_COMMANDS = re.compile(r"\b(pkexec|gksu|gksudo|sudo)\b")
+# A program's toolkit, kept while Buffet Menu runs: by its path, size and change time
+toolkits = {}
 
 
-def is_gtk2_entry(app):
-    """Whether the Buffet menu's copy of an application's menu entry starts it as a GTK 2 application."""
-    keyfile = GLib.KeyFile()
+def library_toolkit(path):
     try:
-        keyfile.load_from_file(os.path.join(APPLICATIONS_DIR, app), GLib.KeyFileFlags.NONE)
-        return " --gtk2 " in keyfile.get_string("Desktop Entry", "Exec")
+        libraries = subprocess.run(["ldd", path], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return next((toolkit for toolkit, library in TOOLKIT_LIBRARIES if library in libraries), None)
+
+
+def python_toolkit(path, text):
+    """The GTK version a Python program asks for: in its script, the files beside it, or its packages."""
+    found = GTK_VERSION.search(text)
+    if found:
+        return f"gtk{found.group(1)}"
+    places = []
+    # A program in its own folder (/usr/lib/linuxmint/mintUpdate, for example): the modules beside it
+    if not os.path.dirname(path) in ("/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin"):
+        places.append(os.path.dirname(path))
+    # The packages it imports
+    for name in dict.fromkeys(PYTHON_IMPORT.findall(text)):
+        for folder in sys.path[1:] + ["/usr/lib/python3/dist-packages"]:
+            if os.path.isdir(os.path.join(folder, name)):
+                places.append(os.path.join(folder, name))
+                break
+    count = 0
+    for place in places:
+        for folder, _folders, names in os.walk(place):
+            for name in names:
+                if not name.endswith(".py") or count > 400:
+                    continue
+                count += 1
+                try:
+                    with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as source:
+                        found = GTK_VERSION.search(source.read())
+                except OSError:
+                    continue
+                if found:
+                    return f"gtk{found.group(1)}"
+    return None
+
+
+def program_toolkit(path, depth=0):
+    """"gtk3", "gtk4", "gtk2" or "qt", "admin" for a program that runs as the administrator, or None."""
+    try:
+        with open(path, "rb") as source:
+            start = source.read(65536)
+    except OSError:
+        return None
+    if start.startswith(b"\x7fELF"):
+        return library_toolkit(path)
+    if not start.startswith(b"#!") or depth > 2:
+        return None
+    text = start.decode("utf-8", errors="replace")
+    if ADMIN_COMMANDS.search(text):
+        return "admin"
+    if "python" in text.split("\n", 1)[0] or path.endswith(".py") or "gi.repository" in text:
+        return python_toolkit(path, text)
+    # A shell script that starts the real program (gparted, LibreOffice…)
+    for other in dict.fromkeys(SCRIPT_PATH.findall(text)):
+        if os.path.isfile(other) and os.access(other, os.X_OK) and os.path.realpath(other) != os.path.realpath(path):
+            toolkit = program_toolkit(other, depth + 1)
+            if toolkit:
+                return toolkit
+    return None
+
+
+INTERPRETERS = re.compile(r"^(python[\d.]*|gjs|sh|bash|dash|env)$")
+
+
+def app_program(info):
+    """The program an application's menu entry starts: for "python3 something.py", the script."""
+    try:
+        _ok, words = GLib.shell_parse_argv(info.get_commandline())
     except GLib.Error:
-        return False
+        return None
+    words = [word for word in words if not word.startswith("%")]
+    while words and (INTERPRETERS.match(os.path.basename(words[0])) or "=" in words[0] or words[0].startswith("-")):
+        if len(words) == 1:
+            break
+        words = words[1:]
+    return shutil.which(words[0]) if words else None
+
+
+def app_toolkit(info):
+    program = app_program(info)
+    if program is None:
+        return None
+    program = os.path.realpath(program)
+    try:
+        details = os.stat(program)
+    except OSError:
+        return None
+    key = (program, details.st_size, details.st_mtime)
+    if key not in toolkits:
+        toolkits[key] = program_toolkit(program)
+    return toolkits[key]
 
 
 def is_buffet_entry(path):
@@ -205,12 +286,11 @@ def enable(app):
         # The user's own entry: kept, to put back when the Buffet menu is removed
         os.makedirs(BACKUP_DIR, exist_ok=True)
         shutil.copy2(source, os.path.join(BACKUP_DIR, app))
-    launcher = shlex.quote(LAUNCHER) + (" --gtk2" if is_gtk2(info) else "")
     groups, _length = keyfile.get_groups()
     for group in groups:
         command = key_value(keyfile, group, "Exec")
         if command and (group == "Desktop Entry" or group.startswith("Desktop Action ")):
-            keyfile.set_string(group, "Exec", f"{launcher} {app} {command}")
+            keyfile.set_string(group, "Exec", f"{shlex.quote(LAUNCHER)} {app} {command}")
     # A D-Bus activated application would be started without its Exec line, so without the launcher
     if key_value(keyfile, "Desktop Entry", "DBusActivatable") is not None:
         keyfile.set_boolean("Desktop Entry", "DBusActivatable", False)
@@ -311,6 +391,12 @@ class BuffetMenuApp(Gtk.Application):
         load_window = Gio.SimpleAction.new("load-window", GLib.VariantType.new("u"))
         load_window.connect("activate", lambda _action, xid: GLib.idle_add(self.load_window, xid.get_uint32()))
         self.add_action(load_window)
+        # And it tells when an application turns out to have a header bar of its own, or no menu bar
+        for name in ("own-header-bar", "no-menu-bar"):
+            action = Gio.SimpleAction.new(name, GLib.VariantType.new("u"))
+            action.connect("activate", lambda _action, xid, reason=name: GLib.idle_add(self.cannot_have, xid.get_uint32(),
+                                                                                         reason))
+            self.add_action(action)
         # Keeps running when the settings window closes
         self.hold()
         # The module hides an application's menu bar while a program owns this name, and shows it again
@@ -391,6 +477,7 @@ class BuffetMenuApp(Gtk.Application):
             return False
         entry["menus"] = len(menus)
         entry["no-menu-bar"] = False
+        entry["own-header-bar"] = False
         self.changed()
 
         def on_layout_chosen(layout):
@@ -429,6 +516,23 @@ class BuffetMenuApp(Gtk.Application):
         while len(self.loaded) > LOADED_WINDOWS:
             del self.loaded[next(iter(self.loaded))]
         return published, menus
+
+    def cannot_have(self, xid, reason):
+        """An application that can't have the Buffet menu: it's taken off the list, and not offered again."""
+        app = window_app(xid)
+        if app.startswith("class:"):
+            return False
+        entry = app_settings(self.settings, app)
+        # One whose menus were shown before has a menu bar: a window of it without one is another kind of window
+        if entry["menus"]:
+            return False
+        entry[reason] = True
+        disable(app)
+        self.changed()
+        why = "has a header bar of its own" if reason == "own-header-bar" else "has no menu bar"
+        self.notify(f"{app_name(app)} can't have the Buffet menu",
+                    f"It {why}, so it was taken off Buffet Menu's list. It will be as before when you reopen it.")
+        return False
 
     def load_window(self, xid):
         where = remote.window_menu(xid)
@@ -529,6 +633,11 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.available.set_filter_func(self.matches_search)
         self.available.connect("row-activated", lambda _list, _row: self.add_selected())
         left.pack_start(self.framed(self.available), True, True, 0)
+        self.show_all_apps = Gtk.CheckButton(label="Show all applications",
+                                             tooltip_text="Also those that can't have the Buffet menu, as far as "
+                                                          "Buffet Menu can tell: GTK 2, GTK 4 or Qt ones, for example")
+        self.show_all_apps.connect("toggled", lambda _button: self.refresh())
+        left.pack_start(self.show_all_apps, False, False, 0)
         lists.pack_start(left, True, True, 0)
 
         # + and −
@@ -614,29 +723,46 @@ class SettingsWindow(Gtk.ApplicationWindow):
                 list_box.remove(row)
         infos = sorted((info for info in Gio.AppInfo.get_all() if info.should_show() and can_use_buffet(info)),
                        key=lambda info: info.get_display_name().lower())
+        show_all = self.show_all_apps.get_active()
         for info in infos:
-            if info.get_id() not in chosen:
-                self.available.add(AppRow(info.get_id(), info))
+            if info.get_id() in chosen:
+                continue
+            why_not = self.why_not(info)
+            if why_not is None or show_all:
+                self.available.add(AppRow(info.get_id(), info, why_not))
         for app in sorted(chosen, key=lambda app: app_name(app).lower()):
             self.chosen.add(AppRow(app, Gio.DesktopAppInfo.new(app), self.status(app), self.show_app_settings))
         self.available.show_all()
         self.chosen.show_all()
 
+    def why_not(self, info):
+        """Why an application can't have the Buffet menu, or None if it can: a GTK 3 one, with a menu bar."""
+        entry = self.app.settings["apps"].get(info.get_id(), {})
+        if entry.get("own-header-bar"):
+            return "Has a header bar of its own"
+        if entry.get("no-menu-bar"):
+            return "Has no menu bar"
+        toolkit = app_toolkit(info)
+        return {"gtk3": None, "gtk4": "A GTK 4 application", "gtk2": "A GTK 2 application",
+                "qt": "A Qt application", "admin": "Runs as the administrator"}.get(toolkit, "Not a GTK 3 application")
+
     def status(self, app):
         entry = self.app.settings["apps"].get(app, {})
-        shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         if entry.get("no-menu-bar"):
             return "No menu bar found: this application can't have the Buffet menu"
-        if is_gtk2_entry(app):
-            menus = f"{entry['menus']} menus. " if entry.get("menus") else ""
-            return f"{menus}GTK 2 application: no header bar. Use {shortcut} or the panel icon"
         if entry.get("menus"):
             return f"{entry['menus']} menus"
+        shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         return f"Not opened yet: reopen it, then press {shortcut} in it"
 
     def add_selected(self):
         row = self.available.get_selected_row()
         if row is not None:
+            # Chosen anyway (with Show all applications): it's given another try
+            entry = self.app.settings["apps"].get(row.app, {})
+            entry.pop("own-header-bar", None)
+            entry.pop("no-menu-bar", None)
+            save_settings(self.app.settings)
             enable(row.app)
             self.refresh()
 
