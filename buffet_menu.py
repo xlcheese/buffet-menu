@@ -60,6 +60,7 @@ LOADED_WINDOWS = 8
 DEBUG = bool(os.environ.get("BUFFET_MENU_DEBUG"))
 # Buffet Menu's own module, built with build.sh: a header bar with the Buffet button, in the applications' windows
 HEADER_BAR_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libbuffet-headerbar.so")
+GTK2_MODULE_FILES = ("/usr/lib/*/gtk-2.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-2.0/modules/libappmenu-gtk-module.so")
 MODULE_FILES = ("/usr/lib/*/gtk-3.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-3.0/modules/libappmenu-gtk-module.so")
 INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils"
 
@@ -67,10 +68,16 @@ INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11
 # the service which application it is, to use its settings
 LAUNCHER_SCRIPT = """#!/bin/sh
 # Written by Buffet Menu: starts an application with the Buffet menu
+MODULES="{modules}"
+# A GTK 2 application: only appmenu-gtk-module, which has a GTK 2 version, and no header bar
+if [ "$1" = "--gtk2" ]; then
+    MODULES="appmenu-gtk-module"
+    shift
+fi
 BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
-export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
+export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}$MODULES"
 exec "$@"
 """
 
@@ -113,6 +120,8 @@ def missing_packages():
         missing.append("gir1.2-keybinder-3.0 (for the keyboard shortcut)")
     if shutil.which("xprop") is None:
         missing.append("x11-utils (to find the active window)")
+    if any(is_gtk2_entry(app) for app in buffet_apps()) and not any(glob.glob(pattern) for pattern in GTK2_MODULE_FILES):
+        missing.append("appmenu-gtk2-module (to read the menus of GTK 2 applications, such as GIMP 2.10)")
     return missing
 
 
@@ -126,6 +135,26 @@ def can_use_buffet(info):
         return False
     command = info.get_commandline()
     return not (command.startswith(("flatpak ", "/usr/bin/flatpak ")) or "/snap/" in command)
+
+
+def is_gtk2(info):
+    """Whether an application is a GTK 2 one, such as GIMP 2.10: its program uses GTK 2's library."""
+    program = shutil.which(info.get_executable() or "")
+    try:
+        with open(program, "rb") as source:
+            return b"libgtk-x11-2.0.so" in source.read()
+    except (OSError, TypeError):
+        return False
+
+
+def is_gtk2_entry(app):
+    """Whether the Buffet menu's copy of an application's menu entry starts it as a GTK 2 application."""
+    keyfile = GLib.KeyFile()
+    try:
+        keyfile.load_from_file(os.path.join(APPLICATIONS_DIR, app), GLib.KeyFileFlags.NONE)
+        return " --gtk2 " in keyfile.get_string("Desktop Entry", "Exec")
+    except GLib.Error:
+        return False
 
 
 def is_buffet_entry(path):
@@ -176,11 +205,12 @@ def enable(app):
         # The user's own entry: kept, to put back when the Buffet menu is removed
         os.makedirs(BACKUP_DIR, exist_ok=True)
         shutil.copy2(source, os.path.join(BACKUP_DIR, app))
+    launcher = shlex.quote(LAUNCHER) + (" --gtk2" if is_gtk2(info) else "")
     groups, _length = keyfile.get_groups()
     for group in groups:
         command = key_value(keyfile, group, "Exec")
         if command and (group == "Desktop Entry" or group.startswith("Desktop Action ")):
-            keyfile.set_string(group, "Exec", f"{shlex.quote(LAUNCHER)} {app} {command}")
+            keyfile.set_string(group, "Exec", f"{launcher} {app} {command}")
     # A D-Bus activated application would be started without its Exec line, so without the launcher
     if key_value(keyfile, "Desktop Entry", "DBusActivatable") is not None:
         keyfile.set_boolean("Desktop Entry", "DBusActivatable", False)
@@ -594,11 +624,14 @@ class SettingsWindow(Gtk.ApplicationWindow):
 
     def status(self, app):
         entry = self.app.settings["apps"].get(app, {})
+        shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         if entry.get("no-menu-bar"):
             return "No menu bar found: this application can't have the Buffet menu"
+        if is_gtk2_entry(app):
+            menus = f"{entry['menus']} menus. " if entry.get("menus") else ""
+            return f"{menus}GTK 2 application: no header bar. Use {shortcut} or the panel icon"
         if entry.get("menus"):
             return f"{entry['menus']} menus"
-        shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         return f"Not opened yet: reopen it, then press {shortcut} in it"
 
     def add_selected(self):
