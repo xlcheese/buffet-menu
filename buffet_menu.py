@@ -19,6 +19,7 @@ import os
 import shlex
 import shutil
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import buffet_menu_test as buffet  # noqa: E402  (sets up the GTK versions)
@@ -53,6 +54,12 @@ ICON_FILE = os.path.join(GLib.get_user_data_dir(), "icons", "hicolor", "scalable
 # Marks the applications' menu entries that Buffet Menu wrote, so that it only ever removes its own
 MARK = "X-Buffet-Menu"
 DEFAULT_SHORTCUT = "<Control><Alt>n"
+# How many windows' menus are kept loaded, to show them without waiting
+LOADED_WINDOWS = 8
+# BUFFET_MENU_DEBUG=1 prints how long each menu took to show
+DEBUG = bool(os.environ.get("BUFFET_MENU_DEBUG"))
+# Buffet Menu's own module, built with build.sh: a header bar with the Buffet button, in the applications' windows
+HEADER_BAR_MODULE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libbuffet-headerbar.so")
 MODULE_FILES = ("/usr/lib/*/gtk-3.0/modules/libappmenu-gtk-module.so", "/usr/lib*/gtk-3.0/modules/libappmenu-gtk-module.so")
 INSTALL_COMMAND = "sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 x11-utils"
 
@@ -63,7 +70,7 @@ LAUNCHER_SCRIPT = """#!/bin/sh
 BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
-export GTK_MODULES="${GTK_MODULES:+$GTK_MODULES:}appmenu-gtk-module"
+export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
 exec "$@"
 """
 
@@ -71,7 +78,7 @@ exec "$@"
 # Settings: the service's, and those of each application's Buffet menu
 
 def load_settings():
-    settings = {"shortcut": DEFAULT_SHORTCUT, "panel-icon": True, "apps": {}}
+    settings = {"shortcut": DEFAULT_SHORTCUT, "panel-icon": True, "header-bar": True, "apps": {}}
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as source:
             settings.update(json.load(source))
@@ -144,17 +151,22 @@ def key_value(keyfile, group, key):
         return None
 
 
-def write_launcher():
+def write_launcher(header_bar=True):
+    """The launcher, with the header bar module if it's wanted and built."""
+    modules = ["appmenu-gtk-module"]
+    if header_bar and os.path.exists(HEADER_BAR_MODULE):
+        modules.insert(0, HEADER_BAR_MODULE)
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(LAUNCHER, "w", encoding="utf-8") as target:
-        target.write(LAUNCHER_SCRIPT)
+        target.write(LAUNCHER_SCRIPT.format(modules=":".join(modules)))
     os.chmod(LAUNCHER, 0o755)
 
 
 def enable(app):
     """Gives an application the Buffet menu: a copy of its menu entry in the user's applications, that
     starts it through the launcher. The menu, the panel and the file manager use it from then on."""
-    write_launcher()
+    if not os.path.exists(LAUNCHER):
+        write_launcher()
     info = Gio.DesktopAppInfo.new(app)
     source = info.get_filename()
     target = os.path.join(APPLICATIONS_DIR, app)
@@ -253,12 +265,22 @@ class BuffetMenuApp(Gtk.Application):
         self.status_icon = None
         self.shortcut = None
         self.registrar = None
+        self.loaded = {}   # the menus loaded before, by window: (bus name, path) → RemoteMenu, the latest last
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
         buffet.set_up_style()
         self.settings = load_settings()
         write_own_entries()
+        write_launcher(self.settings["header-bar"])
+        # The Buffet button of the header bar module asks for a window's menus with this action
+        show_window = Gio.SimpleAction.new("show-window", GLib.VariantType.new("u"))
+        show_window.connect("activate", lambda _action, xid: self.show_menu(False, xid.get_uint32()))
+        self.add_action(show_window)
+        # It also asks for them to be loaded as soon as the window appears, so that the first click is quick
+        load_window = Gio.SimpleAction.new("load-window", GLib.VariantType.new("u"))
+        load_window.connect("activate", lambda _action, xid: GLib.idle_add(self.load_window, xid.get_uint32()))
+        self.add_action(load_window)
         # Keeps running when the settings window closes
         self.hold()
         # The module hides an application's menu bar while a program owns this name, and shows it again
@@ -319,10 +341,11 @@ class BuffetMenuApp(Gtk.Application):
 
     # Showing an application's menus
 
-    def show_menu(self, keyboard):
+    def show_menu(self, keyboard, xid=None):
         if self.menu is not None:
             return False
-        xid = remote.active_window()
+        started = time.monotonic()
+        xid = xid or remote.active_window()
         bus_name = remote.window_property(xid, "_GTK_UNIQUE_BUS_NAME") if xid else None
         path = remote.window_property(xid, "_GTK_MENUBAR_OBJECT_PATH") if xid else None
         if not bus_name or not path:
@@ -331,9 +354,7 @@ class BuffetMenuApp(Gtk.Application):
             return False
         app = window_app(xid)
         entry = app_settings(self.settings, app)
-        menus_published = remote.RemoteMenu(bus_name, path)
-        menus_published.load()
-        menus = menus_published.menus()
+        menus_published, menus = self.menus_of(bus_name, path)
         if not menus:
             entry["no-menu-bar"] = True
             self.changed()
@@ -357,6 +378,31 @@ class BuffetMenuApp(Gtk.Application):
         self.menu.set_shortcuts(entry["shortcuts"])
         self.menu.on_layout_chosen = on_layout_chosen
         self.menu.open(keyboard=keyboard)
+        if DEBUG:
+            print(f"{app}: menu shown in {time.monotonic() - started:.2f} s", flush=True)
+        return False
+
+    def menus_of(self, bus_name, path):
+        """A window's menus: loaded before and brought up to date, or else loaded now."""
+        published = self.loaded.pop((bus_name, path), None)
+        if published is not None:
+            published.refresh()
+            menus = published.menus()
+        if published is None or not menus:
+            published = remote.RemoteMenu(bus_name, path)
+            published.load()
+            menus = published.menus()
+        self.loaded[(bus_name, path)] = published
+        # The windows used last, a few of them
+        while len(self.loaded) > LOADED_WINDOWS:
+            del self.loaded[next(iter(self.loaded))]
+        return published, menus
+
+    def load_window(self, xid):
+        bus_name = remote.window_property(xid, "_GTK_UNIQUE_BUS_NAME")
+        path = remote.window_property(xid, "_GTK_MENUBAR_OBJECT_PATH")
+        if bus_name and path and (bus_name, path) not in self.loaded:
+            self.menus_of(bus_name, path)
         return False
 
     def on_menu_closed(self):
@@ -487,10 +533,16 @@ class SettingsWindow(Gtk.ApplicationWindow):
         panel_icon = Gtk.Switch(active=app.settings["panel-icon"] and XApp is not None, halign=Gtk.Align.START,
                                 sensitive=XApp is not None)
         panel_icon.connect("notify::active", self.on_panel_icon)
+        header_bar = Gtk.Switch(active=app.settings["header-bar"] and os.path.exists(HEADER_BAR_MODULE),
+                                halign=Gtk.Align.START, sensitive=os.path.exists(HEADER_BAR_MODULE))
+        header_bar.connect("notify::active", self.on_header_bar)
         login = Gtk.Switch(active=os.path.exists(AUTOSTART_FILE), halign=Gtk.Align.START)
         login.connect("notify::active", lambda switch, _param: set_autostart(switch.get_active()))
         rows = (("Keyboard shortcut", self.shortcut_button, "Shows the Buffet menu of the active window"),
                 ("Icon in the panel", panel_icon, "Click it to show the Buffet menu of the active window"),
+                ("Header bar", header_bar,
+                  "A header bar with the Buffet button, in place of the title bar" if os.path.exists(HEADER_BAR_MODULE)
+                  else "Build it first, with build.sh in Buffet Menu's folder"),
                 ("Start at login", login, "Without it, the menu bars come back until Buffet Menu is started"))
         for row, (label, widget, note_text) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
@@ -568,6 +620,12 @@ class SettingsWindow(Gtk.ApplicationWindow):
                                               title=f"Buffet menu of {name}")
             self.preferences[app] = dialog
         dialog.present()
+
+    def on_header_bar(self, switch, _param):
+        # For the applications started from now on
+        self.app.settings["header-bar"] = switch.get_active()
+        save_settings(self.app.settings)
+        write_launcher(switch.get_active())
 
     def on_panel_icon(self, switch, _param):
         self.app.settings["panel-icon"] = switch.get_active()

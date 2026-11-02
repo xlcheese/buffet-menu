@@ -81,6 +81,15 @@ to see all its menus at once.
    ```
 4. In its window, choose an application on the left and click **+**. Then close the application and
    open it again from the menu: its menu bar is gone, and **Ctrl+Alt+N** shows its Buffet menu.
+5. For the **header bar with the Buffet button**, build Buffet Menu's GTK module once, then start Buffet
+   Menu again:
+   ```bash
+   sudo apt install build-essential libgtk-3-dev
+   ./build.sh
+   python3 buffet_menu.py --quit; python3 buffet_menu.py
+   ```
+   The applications you've added then open with a header bar in place of their title bar: their title,
+   the Buffet button and the window buttons. Turn it off with **Header bar** in Buffet Menu's window.
 
 ![The Buffet Menu app](screenshots/app.png)
 
@@ -90,7 +99,8 @@ to see all its menus at once.
   login, the applications' menu bars come back until Buffet Menu is started again.
 - **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
   starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
-  menu panels read it. `−` deletes the copy, and the application is as it was.
+  menu panels read it, and with Buffet Menu's own module (`buffet-headerbar.c`), which gives its main
+  window the header bar. `−` deletes the copy, and the application is as it was.
 - **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
   Tried with Xed, GIMP 3, Inkscape 1.x, Code::Blocks and Xcalculator. Not with Flatpak applications, applications with a header
   bar menu, or Wayland. Inkscape doesn't send its keyboard shortcuts with its menus, so they don't show.

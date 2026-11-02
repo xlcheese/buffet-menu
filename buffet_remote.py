@@ -30,9 +30,13 @@ from gi.repository import Gdk, GdkX11, Gio, GLib  # noqa: E402
 
 # How long to wait for the application to send its whole menu, in seconds
 LOAD_TIMEOUT = 2.0
+# How long to wait for the changes to a menu that has been loaded before, in seconds
+REFRESH_TIME = 0.05
 # appmenu-gtk-module hides an application's menu bar while a program owns this name on D-Bus, and shows it
 # again when the name is let go. It doesn't need anything else from that program.
 REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
+# Where the header bar module keeps the position of a window's header bar and Buffet button
+HEADER_PROPERTY = "_BUFFET_MENU_HEADER"
 
 
 def run_registrar():
@@ -107,6 +111,7 @@ class RemoteMenu:
         self.model = Gio.DBusMenuModel.get(self.connection, bus_name, path)
         self.actions = Gio.DBusActionGroup.get(self.connection, bus_name, path)
         self.submenus = []   # kept, so that D-Bus keeps sending their items
+        self.found = []      # the submenus found while opening them, to keep from then on
         self.opened = []     # the submenus told that they're open
         self.choices = {}    # an item's path, as the buffet menu reports it: (action, target)
 
@@ -117,12 +122,30 @@ class RemoteMenu:
         end = time.monotonic() + LOAD_TIMEOUT
         last, steady = -1, 0
         while time.monotonic() < end and steady < 3:
-            count = self.open_submenus(self.model)
+            count = self.open_all()
             spin(0.1)
             steady = steady + 1 if count == last else 0
             last = count
+        self.close_all()
+
+    def refresh(self):
+        """Brings a menu loaded before up to date. D-Bus has kept it so, but some applications only change a
+        submenu when it opens, like Xed's list of open documents: each one opens again, briefly."""
+        self.open_all()
+        spin(REFRESH_TIME)
+        self.close_all()
+
+    def open_all(self):
+        """Tells each submenu that it's opening, keeping the submenus found. Returns how many items there are."""
+        self.found = []
+        count = self.open_submenus(self.model)
+        self.submenus = self.found
+        return count
+
+    def close_all(self):
         for name in self.opened:
             self.actions.change_action_state(name, GLib.Variant("b", False))
+        self.opened = []
 
     def open_submenus(self, model):
         count = model.get_n_items()
@@ -134,7 +157,7 @@ class RemoteMenu:
             links = model.iterate_item_links(index)
             while links.next():
                 submenu = links.get_value()
-                self.submenus.append(submenu)
+                self.found.append(submenu)
                 count += self.open_submenus(submenu)
         return count
 
@@ -194,15 +217,27 @@ class WindowBuffet(buffet.BuffetMenu):
     def __init__(self, xid, menus, on_chosen, on_closed):
         self.window = GdkX11.X11Window.foreign_new_for_display(Gdk.Display.get_default(), xid)
         self.on_closed = on_closed
+        # Where the window's header bar and Buffet button are, if Buffet Menu's header bar module gave it one:
+        # "x y width height" of each, in the window
+        header = window_property(xid, HEADER_PROPERTY)
+        self.header_position = [int(number) for number in header.split()] if header and len(header.split()) == 8 else None
         super().__init__(None, None, menus, on_chosen, lambda: None)
 
     def header_rect(self):
+        if self.header_position:
+            _result, x, y = self.window.get_origin()
+            header_x, header_y, width, height = self.header_position[:4]
+            return x + header_x, y + header_y, width, height
         # The title bar: the part of the window's frame above its contents
         frame = self.window.get_frame_extents()
         top = self.window.get_origin()[-1]
         return frame.x, frame.y, frame.width, max(0, top - frame.y)
 
     def button_rect(self):
+        if self.header_position:
+            _result, x, y = self.window.get_origin()
+            button_x, button_y, width, height = self.header_position[4:]
+            return x + button_x, y + button_y, width, height
         # There's no button: as if there were one in the title bar, to the left of the window's buttons
         x, y, width, height = self.header_rect()
         return x + width - 150, y, height, height
