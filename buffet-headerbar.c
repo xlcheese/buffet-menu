@@ -361,32 +361,6 @@ find_icon (GtkWidget *widget)
   g_free (folder);
 }
 
-/* GTK keeps whether the window is maximized (or tiled, or full screen) in its handling of the window's state
- * changes, and the header bar's maximize button shows it. Some applications handle them without passing them on
- * to GTK (Xed 3.6, in Linux Mint 22): GTK's handling runs first for them, or their header bar's maximize button
- * would never show that the window is maximized, nor unmaximize it */
-static gboolean
-on_window_state (GtkWidget *widget, GdkEventWindowState *event, gpointer data)
-{
-  GtkWidgetClass *window_class = g_type_class_peek (GTK_TYPE_WINDOW);
-
-  window_class->window_state_event (widget, event);
-  return FALSE;
-}
-
-static void
-keep_window_state (GtkWindow *window)
-{
-  GtkWidgetClass *window_class = g_type_class_peek (GTK_TYPE_WINDOW);
-
-  if (GTK_WIDGET_GET_CLASS (window)->window_state_event != window_class->window_state_event &&
-      g_object_get_data (G_OBJECT (window), "buffet-window-state") == NULL)
-    {
-      g_object_set_data (G_OBJECT (window), "buffet-window-state", GINT_TO_POINTER (TRUE));
-      g_signal_connect (window, "window-state-event", G_CALLBACK (on_window_state), NULL);
-    }
-}
-
 /* The Buffet button, at the end of a header bar */
 static void
 add_buffet_button (GtkWindow *window, GtkWidget *header)
@@ -403,7 +377,6 @@ add_buffet_button (GtkWindow *window, GtkWidget *header)
   gtk_widget_show (button);
   g_signal_connect_after (header, "size-allocate", G_CALLBACK (on_header_allocated), button);
   g_object_set_data (G_OBJECT (window), "buffet-header", header);
-  keep_window_state (window);
 }
 
 /* BUFFET_MENU_DEBUG=1: what GTK makes of the window's state, and the icon of the header bar's maximize button */
