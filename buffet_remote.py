@@ -41,6 +41,8 @@ REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
 HEADER_PROPERTY = "_BUFFET_MENU_HEADER"
 # Where it keeps the keyboard shortcuts the application registered with GTK, as "action=shortcut|…"
 ACCELS_PROPERTY = "_BUFFET_MENU_ACCELS"
+# And those its menu bar's items show, by their labels: "File\x1fSave\t<Primary>s", one a line
+LABEL_ACCELS_PROPERTY = "_BUFFET_MENU_LABEL_ACCELS"
 
 
 def run_registrar():
@@ -139,15 +141,25 @@ def window_menu(xid):
 
 
 def window_accels(xid):
-    """The keyboard shortcuts of a window's application, by their actions' detailed names, as the header bar
-    module keeps them: for a menu that GTK publishes itself, which doesn't include them."""
+    """The keyboard shortcuts of a window's application that its published menu doesn't include, as the header bar
+    module keeps them: by their actions' detailed names, for a menu that GTK publishes itself (Inkscape's), and by
+    their items' paths ("File → Save"), for those only shown in the menu bar's items (LibreOffice's)."""
     text = window_property(xid, ACCELS_PROPERTY) or ""
     accels = {}
     for pair in text.split("|"):
         action, _equals, accel = pair.rpartition("=")
         if action and accel:
             accels[action] = accel
+    for line in (window_property(xid, LABEL_ACCELS_PROPERTY) or "").splitlines():
+        path, _tab, accel = line.rpartition("\t")
+        if path and accel:
+            accels.setdefault(item_path([buffet.plain(label) for label in path.split("\x1f")]), accel)
     return accels
+
+
+def item_path(labels):
+    """The key of a menu item, by its labels (without access keys) from its menu's title."""
+    return "path:" + " → ".join(labels)
 
 
 def spin(seconds):
@@ -344,7 +356,8 @@ class RemoteMenu:
             group, name = self.action(full_name)
             target = model.get_item_attribute_value(index, "target", None)
             accel = attribute(model, index, "accel") or attribute(model, index, "x-canonical-accel") or \
-                (self.accels.get(Gio.Action.print_detailed_name(full_name, target)) if full_name else None)
+                (self.accels.get(Gio.Action.print_detailed_name(full_name, target)) if full_name else None) or \
+                self.accels.get(item_path(path + [buffet.plain(label)]))
             state = group.get_action_state(name) if group is not None else None
             if state is not None and target is None and state.get_type_string() == "b":
                 entries.append(("check", label, accel, state.get_boolean()))

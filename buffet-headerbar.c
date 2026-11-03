@@ -22,6 +22,7 @@
 #define SERVICE_PATH "/io/github/xlcheese/BuffetMenu"
 #define HEADER_PROPERTY "_BUFFET_MENU_HEADER"
 #define ACCELS_PROPERTY "_BUFFET_MENU_ACCELS"
+#define LABEL_ACCELS_PROPERTY "_BUFFET_MENU_LABEL_ACCELS"
 #define ICON_NAME "buffet-menu-symbolic"
 
 static void (*original_realize) (GtkWidget *widget);
@@ -175,11 +176,108 @@ publish_accels (GtkWidget *widget)
   g_string_free (text, TRUE);
 }
 
+/* The shortcuts shown in the menu bar's items, by their labels: "File\x1fSave\t<Primary>s", one a line. Some
+ * applications only show them there, and appmenu-gtk-module doesn't publish them (LibreOffice) */
+typedef struct
+{
+  GString *text;
+  GPtrArray *path;
+} Collected;
+
+static void
+collect_label_accels (GtkWidget *widget, gpointer data)
+{
+  Collected *collected = data;
+  GtkWidget *child, *submenu;
+  const gchar *label;
+  guint key = 0, i;
+  GdkModifierType mods = 0;
+  gchar *accel;
+
+  if (!GTK_IS_MENU_ITEM (widget))
+    {
+      if (GTK_IS_CONTAINER (widget))
+        gtk_container_forall (GTK_CONTAINER (widget), collect_label_accels, data);
+      return;
+    }
+  label = gtk_menu_item_get_label (GTK_MENU_ITEM (widget));
+  if (label == NULL || *label == '\0')
+    return;
+  g_ptr_array_add (collected->path, (gpointer) label);
+  child = gtk_bin_get_child (GTK_BIN (widget));
+  if (GTK_IS_ACCEL_LABEL (child))
+    gtk_accel_label_get_accel (GTK_ACCEL_LABEL (child), &key, &mods);
+  if (key != 0)
+    {
+      for (i = 0; i < collected->path->len; i++)
+        g_string_append_printf (collected->text, "%s%s", i ? "\x1f" : "", (gchar *) collected->path->pdata[i]);
+      accel = gtk_accelerator_name (key, mods);
+      g_string_append_printf (collected->text, "\t%s\n", accel);
+      g_free (accel);
+    }
+  submenu = gtk_menu_item_get_submenu (GTK_MENU_ITEM (widget));
+  if (submenu != NULL)
+    gtk_container_forall (GTK_CONTAINER (submenu), collect_label_accels, data);
+  g_ptr_array_remove_index (collected->path, collected->path->len - 1);
+}
+
+static void
+collect_menu_bars (GtkWidget *widget, gpointer data)
+{
+  if (GTK_IS_MENU_BAR (widget))
+    gtk_container_forall (GTK_CONTAINER (widget), collect_label_accels, data);
+  else if (GTK_IS_CONTAINER (widget))
+    gtk_container_forall (GTK_CONTAINER (widget), collect_menu_bars, data);
+}
+
+static void
+publish_label_accels (GtkWidget *widget)
+{
+  GdkWindow *window = gtk_widget_get_window (widget);
+  Collected collected = { g_string_new (NULL), g_ptr_array_new () };
+  gchar *published;
+
+  if (window != NULL)
+    {
+      gtk_container_forall (GTK_CONTAINER (widget), collect_menu_bars, &collected);
+      /* Only when they've changed: Buffet Menu converts the menus again when they do. (Kept with the window's X11
+       * window, which is a new one when the window gets its header bar after it was first shown) */
+      published = g_object_get_data (G_OBJECT (window), "buffet-label-accels");
+      if (g_strcmp0 (published, collected.text->str) != 0)
+        {
+          gdk_property_change (window, gdk_atom_intern_static_string (LABEL_ACCELS_PROPERTY),
+                               gdk_atom_intern_static_string ("UTF8_STRING"), 8, GDK_PROP_MODE_REPLACE,
+                               (const guchar *) collected.text->str, collected.text->len);
+          g_object_set_data_full (G_OBJECT (window), "buffet-label-accels", g_strdup (collected.text->str), g_free);
+        }
+    }
+  g_string_free (collected.text, TRUE);
+  g_ptr_array_free (collected.path, TRUE);
+}
+
+/* Menu items added or taken away: the menus' shortcuts are published again, once that's done (LibreOffice fills its
+ * submenus when they first open) */
+static guint publish_later_source = 0;
+
+static gboolean
+publish_label_accels_later (gpointer data)
+{
+  GList *windows = gtk_window_list_toplevels (), *window;
+
+  publish_later_source = 0;
+  for (window = windows; window != NULL; window = window->next)
+    if (gtk_widget_get_realized (window->data) && is_main_window (window->data))
+      publish_label_accels (window->data);
+  g_list_free (windows);
+  return G_SOURCE_REMOVE;
+}
+
 /* Once the window is on screen and has published its menus: Buffet Menu loads them, for the first click */
 static gboolean
 load_menus (gpointer window)
 {
   publish_accels (GTK_WIDGET (window));
+  publish_label_accels (GTK_WIDGET (window));
   ask_service (GTK_WIDGET (window), "load-window");
   g_object_unref (window);
   return G_SOURCE_REMOVE;
@@ -281,6 +379,34 @@ add_buffet_button (GtkWindow *window, GtkWidget *header)
   g_object_set_data (G_OBJECT (window), "buffet-header", header);
 }
 
+/* BUFFET_MENU_DEBUG=1: what GTK makes of the window's state, and the icon of the header bar's maximize button */
+static void
+find_maximize_icon (GtkWidget *widget, gpointer icon)
+{
+  GtkWidget *image;
+
+  if (GTK_IS_BUTTON (widget) && gtk_style_context_has_class (gtk_widget_get_style_context (widget), "maximize"))
+    {
+      image = gtk_bin_get_child (GTK_BIN (widget));
+      if (GTK_IS_IMAGE (image))
+        gtk_image_get_icon_name (GTK_IMAGE (image), (const gchar **) icon, NULL);
+    }
+  else if (GTK_IS_CONTAINER (widget))
+    gtk_container_forall (GTK_CONTAINER (widget), find_maximize_icon, icon);
+}
+
+static gboolean
+debug_state (GtkWidget *widget, GdkEventWindowState *event, GtkWidget *header)
+{
+  const gchar *icon = NULL;
+
+  find_maximize_icon (header, &icon);
+  g_message ("Buffet Menu: %s: window state %#x (changed %#x), maximized for GTK: %s, maximize button: %s",
+             G_OBJECT_TYPE_NAME (widget), event->new_window_state, event->changed_mask,
+             gtk_window_is_maximized (GTK_WINDOW (widget)) ? "yes" : "no", icon ? icon : "none");
+  return FALSE;
+}
+
 static void
 add_header_bar (GtkWindow *window)
 {
@@ -292,6 +418,8 @@ add_header_bar (GtkWindow *window)
   gtk_widget_show_all (header);
   add_buffet_button (window, header);
   gtk_window_set_titlebar (window, header);
+  if (g_getenv ("BUFFET_MENU_DEBUG") != NULL)
+    g_signal_connect_after (window, "window-state-event", G_CALLBACK (debug_state), header);
 }
 
 /* The last header bar in a widget: the one on the right, in a title bar made of several (gedit's) */
@@ -380,6 +508,12 @@ on_hierarchy_changed (GSignalInvocationHint *hint, guint count, const GValue *va
   GtkWidget *widget = g_value_get_object (&values[0]);
   GtkWidget *toplevel;
 
+  if (GTK_IS_MENU_ITEM (widget))
+    {
+      if (publish_later_source == 0)
+        publish_later_source = g_timeout_add (100, publish_label_accels_later, NULL);
+      return TRUE;
+    }
   if (!GTK_IS_MENU_BAR (widget))
     return TRUE;
   toplevel = gtk_widget_get_toplevel (widget);
