@@ -23,6 +23,7 @@
 #define HEADER_PROPERTY "_BUFFET_MENU_HEADER"
 #define ACCELS_PROPERTY "_BUFFET_MENU_ACCELS"
 #define LABEL_ACCELS_PROPERTY "_BUFFET_MENU_LABEL_ACCELS"
+#define APP_PROPERTY "_BUFFET_MENU_APP"
 #define ICON_NAME "buffet-menu-symbolic"
 
 static void (*original_realize) (GtkWidget *widget);
@@ -30,6 +31,10 @@ static void (*original_realize) (GtkWidget *widget);
 static gboolean service_running = FALSE;
 /* BUFFET_MENU_HEADER_BAR=0: no header bar, only the menu bars hidden (Buffet Menu's Header bar setting) */
 static gboolean header_bars = TRUE;
+/* The application's menu entry, as Buffet Menu's launcher passed it on (BUFFET_MENU_APP): kept on its windows, for
+ * Buffet Menu to use its settings. (Buffet Menu used to read it from the environment the application was started
+ * with, but some applications overwrite that, with setproctitle: Linux Mint's Update Manager) */
+static gchar *app_id = NULL;
 
 static void
 find_menu_bar (GtkWidget *widget, gpointer found)
@@ -458,6 +463,10 @@ buffet_realize (GtkWidget *widget)
   else if ((header = own_header_bar (GTK_WINDOW (widget))) != NULL)
     add_buffet_button (GTK_WINDOW (widget), header);
   original_realize (widget);
+  if (app_id != NULL && gtk_widget_get_window (widget) != NULL)
+    gdk_property_change (gtk_widget_get_window (widget), gdk_atom_intern_static_string (APP_PROPERTY),
+                         gdk_atom_intern_static_string ("UTF8_STRING"), 8, GDK_PROP_MODE_REPLACE,
+                         (const guchar *) app_id, strlen (app_id));
   /* A main window: once it's on screen, its shortcuts are kept, and Buffet Menu loads its menus */
   if (g_object_get_data (G_OBJECT (widget), "buffet-header") != NULL || GTK_IS_APPLICATION_WINDOW (widget))
     g_signal_connect (widget, "map", G_CALLBACK (on_window_mapped), NULL);
@@ -570,6 +579,7 @@ gtk_module_init (gint *argc, gchar ***argv)
     return;
   original_realize = klass->realize;
   header_bars = g_strcmp0 (g_getenv ("BUFFET_MENU_HEADER_BAR"), "0") != 0;
+  app_id = g_strdup (g_getenv ("BUFFET_MENU_APP"));
   restore_environment ();
   replace_realize (GTK_TYPE_WINDOW);
   g_bus_watch_name (G_BUS_TYPE_SESSION, SERVICE, G_BUS_NAME_WATCHER_FLAGS_NONE, on_service_appeared,

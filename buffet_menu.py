@@ -199,10 +199,14 @@ def program_toolkit(path, depth=0):
     if not start.startswith(b"#!") or depth > 2:
         return None
     text = start.decode("utf-8", errors="replace")
-    if ADMIN_COMMANDS.search(text):
-        return "admin"
     if "python" in text.split("\n", 1)[0] or path.endswith(".py") or "gi.repository" in text:
-        return python_toolkit(path, text)
+        toolkit = python_toolkit(path, text)
+        if toolkit:
+            return toolkit
+    # A shell script that starts its program as the administrator (Synaptic). A Python program may use pkexec for
+    # some of its work (Update Manager), and isn't one
+    elif ADMIN_COMMANDS.search(text):
+        return "admin"
     # A shell script that starts the real program (gparted, LibreOffice…)
     for other in dict.fromkeys(SCRIPT_PATH.findall(text)):
         if os.path.isfile(other) and os.access(other, os.X_OK) and os.path.realpath(other) != os.path.realpath(path):
@@ -320,7 +324,11 @@ def disable(app):
 
 def window_app(xid):
     """Which application a window belongs to: the id of its menu entry, as the launcher passed it on, or else
-    its window class."""
+    its window class. The header bar module keeps it on the window; without it, it's in the environment the
+    application was started with (unless the application overwrote that)."""
+    app = remote.window_property(xid, "_BUFFET_MENU_APP")
+    if app:
+        return app
     pid = remote.window_number(xid, "_NET_WM_PID")
     if pid:
         try:
