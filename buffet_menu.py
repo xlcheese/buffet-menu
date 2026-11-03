@@ -75,6 +75,8 @@ BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
 export BUFFET_MENU_HEADER_BAR={header_bar}
+# Buffet Menu's module puts it back as it was, for the programs the application starts
+export BUFFET_MENU_GTK_MODULES="${{GTK_MODULES-}}"
 export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
 exec "$@"
 """

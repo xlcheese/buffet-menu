@@ -542,6 +542,25 @@ replace_realize (GType type)
   g_free (children);
 }
 
+/* The environment as it was before Buffet Menu's launcher started the application: the programs the application
+ * starts (a document opened from Nemo, for example) don't get the Buffet menu, nor its settings. Buffet Menu finds
+ * out which application a window belongs to from the environment it was started with, which this doesn't change */
+static void
+restore_environment (void)
+{
+  const gchar *modules = g_getenv ("BUFFET_MENU_GTK_MODULES");
+
+  if (g_getenv ("BUFFET_MENU_APP") == NULL)
+    return;
+  if (modules != NULL && *modules != '\0')
+    g_setenv ("GTK_MODULES", modules, TRUE);
+  else
+    g_unsetenv ("GTK_MODULES");
+  g_unsetenv ("BUFFET_MENU_GTK_MODULES");
+  g_unsetenv ("BUFFET_MENU_HEADER_BAR");
+  g_unsetenv ("BUFFET_MENU_APP");
+}
+
 G_MODULE_EXPORT void
 gtk_module_init (gint *argc, gchar ***argv)
 {
@@ -551,6 +570,7 @@ gtk_module_init (gint *argc, gchar ***argv)
     return;
   original_realize = klass->realize;
   header_bars = g_strcmp0 (g_getenv ("BUFFET_MENU_HEADER_BAR"), "0") != 0;
+  restore_environment ();
   replace_realize (GTK_TYPE_WINDOW);
   g_bus_watch_name (G_BUS_TYPE_SESSION, SERVICE, G_BUS_NAME_WATCHER_FLAGS_NONE, on_service_appeared,
                     on_service_vanished, NULL, NULL);
