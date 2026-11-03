@@ -8,7 +8,8 @@
  * the window gets its header bar then. It also keeps the keyboard shortcuts that the application registered
  * with GTK in the _BUFFET_MENU_ACCELS property: a menu that GTK publishes itself (Inkscape's, for example)
  * doesn't include them. A window with a header bar of its own and a menu bar that's only published (gedit's) gets
- * the Buffet button in its header bar. While Buffet Menu is running, the application's menu bars are hidden. And it tells Buffet Menu when the application's first main window has a header bar of
+ * the Buffet button in its header bar. While Buffet Menu is running, the application's menu bars are hidden (see
+ * set_service_running()). And it tells Buffet Menu when the application's first main window has a header bar of
  * its own, or no menu bar: the application can't have the Buffet menu.
  *
  * Build: gcc -shared -fPIC -O2 -o libbuffet-headerbar.so buffet-headerbar.c $(pkg-config --cflags --libs gtk+-3.0)
@@ -72,54 +73,39 @@ wants_header_bar (GtkWindow *window)
          has_menu_bar (window);
 }
 
-/* The menu bars: hidden while Buffet Menu is running, and shown again when it stops. (Buffet Menu used to own
- * com.canonical.AppMenu.Registrar for appmenu-gtk-module to hide them, but other applications watch that name
- * too, and hide their menu bars for a global menu: LibreOffice, Qt applications) */
+/* The menu bars: hidden while Buffet Menu is running, and shown again when it stops. appmenu-gtk-module, which
+ * publishes them when they're set up, shrinks them to nothing while the gtk-shell-shows-menubar setting is on,
+ * as for a global menu, and so does GTK for a GtkApplication's menu bar (Inkscape's). The setting is kept on
+ * while Buffet Menu runs: appmenu-gtk-module itself only turns it on while com.canonical.AppMenu.Registrar is
+ * owned, which Buffet Menu used to do, but other applications watch that name too, and hide their menu bars for
+ * a global menu that Buffet Menu can't show (LibreOffice, Qt applications). A menu bar hidden outright wouldn't
+ * be set up, nor published. */
 static void
-on_menu_bar_shown (GtkWidget *menu_bar, gpointer data)
+keep_setting (GtkSettings *settings, GParamSpec *pspec, gpointer data)
 {
-  if (service_running)
-    gtk_widget_hide (menu_bar);
-}
+  gboolean shows;
 
-static void
-hide_menu_bar (GtkWidget *menu_bar)
-{
-  if (g_object_get_data (G_OBJECT (menu_bar), "buffet-hidden") == NULL)
-    {
-      g_object_set_data (G_OBJECT (menu_bar), "buffet-hidden", GINT_TO_POINTER (TRUE));
-      /* An application that shows its menu bar again (Mousepad's View → Menubar, for example) */
-      g_signal_connect (menu_bar, "show", G_CALLBACK (on_menu_bar_shown), NULL);
-    }
-  gtk_widget_hide (menu_bar);
-}
-
-static void
-show_menu_bars (GtkWidget *widget, gpointer shown)
-{
-  if (GTK_IS_MENU_BAR (widget))
-    {
-      if (!GPOINTER_TO_INT (shown))
-        hide_menu_bar (widget);
-      else if (g_object_get_data (G_OBJECT (widget), "buffet-hidden") != NULL)
-        gtk_widget_show (widget);
-    }
-  else if (GTK_IS_CONTAINER (widget))
-    gtk_container_forall (GTK_CONTAINER (widget), show_menu_bars, shown);
+  g_object_get (settings, "gtk-shell-shows-menubar", &shows, NULL);
+  if (shows != service_running)
+    g_object_set (settings, "gtk-shell-shows-menubar", service_running, NULL);
 }
 
 static void
 set_service_running (gboolean running)
 {
-  GList *windows, *window;
+  static gboolean watching = FALSE;
+  GtkSettings *settings = gtk_settings_get_default ();
 
   service_running = running;
-  /* The menu bar that GTK shows itself, for a GtkApplication's menu (Inkscape's): as for a global menu */
-  g_object_set (gtk_settings_get_default (), "gtk-shell-shows-menubar", running, NULL);
-  windows = gtk_window_list_toplevels ();
-  for (window = windows; window != NULL; window = window->next)
-    show_menu_bars (window->data, GINT_TO_POINTER (!running));
-  g_list_free (windows);
+  if (settings == NULL)
+    return;
+  if (!watching)
+    {
+      watching = TRUE;
+      /* appmenu-gtk-module turns it off when it finds no registrar */
+      g_signal_connect (settings, "notify::gtk-shell-shows-menubar", G_CALLBACK (keep_setting), NULL);
+    }
+  keep_setting (settings, NULL, NULL);
 }
 
 static void
@@ -397,8 +383,6 @@ on_hierarchy_changed (GSignalInvocationHint *hint, guint count, const GValue *va
   if (!GTK_IS_MENU_BAR (widget))
     return TRUE;
   toplevel = gtk_widget_get_toplevel (widget);
-  if (service_running && GTK_IS_WINDOW (toplevel))
-    hide_menu_bar (widget);
   if (GTK_IS_WINDOW (toplevel) && g_object_get_data (G_OBJECT (toplevel), "buffet-pending") == NULL &&
       wants_header_bar (GTK_WINDOW (toplevel)))
     {

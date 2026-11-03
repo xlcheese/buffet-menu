@@ -103,7 +103,7 @@ to see all its menus at once.
   window the header bar and hides its menu bar while Buffet Menu runs (other applications keep theirs).
   `−` deletes the copy, and the application is as it was.
 - **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
-  Tried with Xed, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks and Xcalculator. The list only offers
+  Tried with Xed, Nemo, LibreOffice, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks and Xcalculator. The list only offers
   GTK3 applications; one that turns out to have a header bar of its own (and no menu bar behind it) or no
   menu bar is taken off the list when it first opens. Tick **Show all applications** to see the others,
   and why they're left out. Not with GTK2 applications (GIMP 2.10), GTK4, Qt, Flatpak or Wayland.

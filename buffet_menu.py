@@ -189,6 +189,9 @@ def program_toolkit(path, depth=0):
             start = source.read(65536)
     except OSError:
         return None
+    # LibreOffice loads its GTK 3 support (when it's installed: libreoffice-gtk3) as a plugin, beside its program
+    if os.path.exists(os.path.join(os.path.dirname(path), "libvclplug_gtk3lo.so")):
+        return "gtk3"
     if start.startswith(b"\x7fELF"):
         return library_toolkit(path)
     if not start.startswith(b"#!") or depth > 2:
