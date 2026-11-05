@@ -655,6 +655,17 @@ class BuffetMenuApp(Gtk.Application):
 
 # The settings window
 
+def program_name(info):
+    """The name of the program an application's menu entry starts, past Buffet Menu's launcher: nemo for Files."""
+    try:
+        _ok, words = GLib.shell_parse_argv(info.get_commandline() or "")
+    except GLib.Error:
+        return ""
+    if words and words[0] == LAUNCHER:
+        words = words[2:]
+    return os.path.basename(words[0]) if words else ""
+
+
 class AppRow(Gtk.ListBoxRow):
     """An application in one of the two lists: its icon and name, and in the Buffet menu list, its status and
     the button to its settings."""
@@ -663,6 +674,13 @@ class AppRow(Gtk.ListBoxRow):
         super().__init__()
         self.app = app
         self.name = info.get_display_name() if info else app
+        # What the search box finds it by: its name, and as the applications menu does, its program (nemo for
+        # Files), its menu entry's keywords, generic name ("File Manager") and description
+        words = [self.name, app.removesuffix(".desktop")]
+        if info:
+            words += [program_name(info), info.get_generic_name() or "", info.get_description() or ""]
+            words += info.get_keywords() if isinstance(info, Gio.DesktopAppInfo) else []
+        self.search_text = " ".join(word.lower() for word in words if word)
         box = Gtk.Box(spacing=10, margin=6)
         icon = Gtk.Image.new_from_gicon(info.get_icon(), Gtk.IconSize.DND) if info and info.get_icon() else \
             Gtk.Image.new_from_icon_name("application-x-executable", Gtk.IconSize.DND)
@@ -798,8 +816,8 @@ class SettingsWindow(Gtk.ApplicationWindow):
         return frame
 
     def matches_search(self, row):
-        text = self.search.get_text().strip().lower()
-        return not text or text in row.name.lower()
+        # Every word typed, anywhere in what the row is found by: "file man" finds Files
+        return all(word in row.search_text for word in self.search.get_text().lower().split())
 
     def refresh(self):
         """Fills the two lists again, from the menu entries and the settings."""
