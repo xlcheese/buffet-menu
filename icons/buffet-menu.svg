@@ -18,9 +18,9 @@
   <rect x="9" y="12" width="110" height="110" rx="24" fill="#000" opacity="0.3" filter="url(#shadow)"/>
   <!-- the tray: its rim, thicker along the top and bottom like a tray's lip -->
   <rect x="8" y="8" width="112" height="112" rx="24" fill="#4f9058"/>
-  <rect x="10" y="16" width="108" height="98" rx="20" fill="url(#tray)"/>
+  <rect x="10" y="15" width="108" height="98" rx="20" fill="url(#tray)"/>
   <!-- a light edge under the top rim -->
-  <path d="M 30 17 h 68" stroke="#d6f1d8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 30 16 h 68" stroke="#d6f1d8" stroke-width="2" stroke-linecap="round"/>
   <g fill="url(#well)" stroke="#4f9058" stroke-width="2.5">
     <!-- the long one on the left -->
     <rect x="19.5" y="26.5" width="15" height="76" rx="7.5"/>
