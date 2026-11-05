@@ -223,7 +223,8 @@ class RemoteMenu:
         self.watched = set()   # the models whose changes are watched, by id
         self.openers = set()   # the submenus' actions, whose changes are Buffet Menu's own: (group, name)
         for group in self.groups.values():
-            for signal in ("action-added", "action-removed", "action-enabled-changed"):
+            # (Whether an action is enabled isn't part of the menus: see disabled_paths())
+            for signal in ("action-added", "action-removed"):
                 group.connect(signal, self.on_changed)
             group.connect("action-state-changed", self.on_state_changed)
         self.watch(self.model)
@@ -368,6 +369,12 @@ class RemoteMenu:
                 entries.append(("item", label, accel))
             self.choices[" → ".join(path + [buffet.plain(label)])] = (group, name, target)
         return tidy(entries)
+
+    def disabled_paths(self):
+        """The items whose actions the application has disabled, by their paths, as the buffet menu reports them:
+        asked each time the menu opens, as they change all the time (Paste, Undo…)."""
+        return [path for path, (group, name, _target) in self.choices.items()
+                if group is not None and not group.get_action_enabled(name)]
 
     def action(self, full_name):
         """The action group and name of a menu item's action, or (None, None) if there's no such action."""

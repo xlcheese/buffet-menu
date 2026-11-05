@@ -516,6 +516,7 @@ class BuffetMenuApp(Gtk.Application):
                 self.destroy_menu(menu)
             menu = self.build_menu(xid, menus)
         self.configure(menu, entry)
+        menu.set_disabled(menus_published.disabled_paths())
         self.menu = menu
         built = time.monotonic()
         self.menu.open(keyboard=keyboard)

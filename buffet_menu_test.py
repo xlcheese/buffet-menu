@@ -362,6 +362,7 @@ class BuffetItem(Gtk.EventBox):
         self.entries = entry[2] if kind == "sub" else None
         self.accel = None if kind == "sub" else entry[2]
         self.path = path + [label if kind == "file" else plain(label)]
+        self.enabled = True
         self.node = ItemNode(orientation=Gtk.Orientation.HORIZONTAL)
         self.add(self.node)
 
@@ -387,6 +388,12 @@ class BuffetItem(Gtk.EventBox):
             arrow = Gtk.Image.new_from_icon_name("pan-end-symbolic", Gtk.IconSize.MENU)
             self.node.pack_end(arrow, False, False, 0)
             arrow.set_margin_start(10)
+
+    def set_enabled(self, enabled):
+        """Greys the item out when its application has disabled it (Paste with nothing to paste): it's skipped
+        by the arrow keys, and does nothing when chosen, as in other menus. Submenus stay enabled."""
+        self.enabled = enabled or bool(self.entries)
+        self.set_sensitive(self.enabled)
 
     def show_shortcut(self, shortcuts):
         """Shows the item's keyboard shortcut next to it, in its tooltip, or not at all."""
@@ -516,6 +523,7 @@ class BuffetMenu:
         self.is_open = False
         self.access_keys = False
         self.selected = None
+        self.disabled = set()   # the items the application has disabled, by their paths ("Edit → Paste")
         self.pointer = None     # where the mouse pointer was last seen, on the screen
         self.levels = []        # the open submenus, from the outermost
         self.sub_popups = []    # a pop-up window for each depth of submenu, kept for the next time
@@ -553,6 +561,7 @@ class BuffetMenu:
 
     def connect_item(self, item):
         item.show_shortcut(self.shortcuts)
+        item.set_enabled(" → ".join(item.path) not in self.disabled)
         item.connect("enter-notify-event", self.on_item_enter)
         item.connect("leave-notify-event", self.on_item_leave)
         item.connect("button-press-event", lambda *_: True)
@@ -577,7 +586,7 @@ class BuffetMenu:
         self.popup.grab_add()
         self.pointer = tuple(window.get_display().get_default_seat().get_pointer().get_position()[1:])
         if keyboard:
-            self.select((column or self.columns[0]).items[0])
+            self.select(self.first_enabled((column or self.columns[0]).items) or self.first_enabled(self.main_items()))
         self.on_opened()
 
     def prepare(self):
@@ -614,6 +623,12 @@ class BuffetMenu:
     def set_rows(self, rows):
         """Whether the menus of a row line up, or stack up under the menus above them (see ROWS_LINED)."""
         self.rows = rows
+
+    def set_disabled(self, paths):
+        """The items that the application has disabled, by their paths ("Edit → Paste"): greyed out."""
+        self.disabled = set(paths)
+        for item in self.main_items() + [item for level in self.levels for item in level.column.items]:
+            item.set_enabled(" → ".join(item.path) not in self.disabled)
 
     def set_shortcuts(self, shortcuts):
         """Shows the keyboard shortcuts next to the items, in tooltips, or not at all (see SHORTCUTS_SHOW)."""
@@ -877,8 +892,8 @@ class BuffetMenu:
             popup.show_all()
             self.levels.append(Level(item, column, popup))
             self.show_access_keys(self.access_keys)
-        if select_first and self.levels[depth].column.items:
-            self.select(self.levels[depth].column.items[0])
+        if select_first and self.first_enabled(self.levels[depth].column.items):
+            self.select(self.first_enabled(self.levels[depth].column.items))
 
     def close_levels(self, depth):
         """Closes the submenus this deep and deeper."""
@@ -907,6 +922,8 @@ class BuffetMenu:
             scroll_to(item)
 
     def activate(self, item):
+        if not item.enabled:
+            return
         if item.entries:
             self.open_submenu(item, select_first=True)
             return
@@ -1009,9 +1026,9 @@ class BuffetMenu:
         elif mods == Gdk.ModifierType.MOD1_MASK:
             # Alt+letter: go to that menu
             for column in self.columns:
-                if column.matches(key):
+                if column.matches(key) and self.first_enabled(column.items):
                     self.close_levels(0)
-                    self.select(column.items[0])
+                    self.select(self.first_enabled(column.items))
                     break
         elif not mods:
             # A letter: choose the item with that access key in the current menu
@@ -1022,7 +1039,7 @@ class BuffetMenu:
             else:
                 column = self.columns[0]
             for item in column.items:
-                if item.matches(key):
+                if item.enabled and item.matches(key):
                     self.select(item)
                     self.activate(item)
                     break
@@ -1039,12 +1056,20 @@ class BuffetMenu:
         for popup in [self.popup] + self.sub_popups:
             popup.set_mnemonics_visible(visible)
 
+    @staticmethod
+    def first_enabled(items, step=1):
+        """The first item that isn't greyed out, from the start (or from the end, with step -1)."""
+        return next((item for item in items[::step] if item.enabled), None)
+
     def move_vertically(self, step):
         if self.selected is None:
-            self.select(self.columns[0].items[0])
+            self.select(self.first_enabled(self.main_items()))
             return
         column = self.selected.column
         index = column.items.index(self.selected) + step
+        # Past the greyed out items
+        while 0 <= index < len(column.items) and not column.items[index].enabled:
+            index += step
         if 0 <= index < len(column.items):
             self.select(column.items[index])
             return
@@ -1052,20 +1077,23 @@ class BuffetMenu:
             # Past the end of the menu: on to the menu above or below it, in the next row
             row, position = self.places[column]
             for other, place in self.places.items():
-                if place == (row + step, position):
-                    self.select(other.items[0 if step > 0 else -1])
+                if place == (row + step, position) and self.first_enabled(other.items, step):
+                    self.select(self.first_enabled(other.items, step))
                     return
-        self.select(column.items[index % len(column.items)])
+        self.select(self.first_enabled(column.items, step) or self.selected)
 
     def move_sideways(self, step):
         if self.selected is None:
-            self.select(self.columns[0].items[0])
+            self.select(self.first_enabled(self.main_items()))
             return
         current = self.selected
         column = self.columns[(self.columns.index(current.column) + step) % len(self.columns)]
+        enabled = [item for item in column.items if item.enabled]
+        if not enabled:
+            return
         # The item of the next menu that's nearest in height to the current one
         _x, y = current.translate_coordinates(self.popup, 0, current.get_allocated_height() // 2)
-        self.select(min(column.items, key=lambda item: abs(
+        self.select(min(enabled, key=lambda item: abs(
             item.translate_coordinates(self.popup, 0, item.get_allocated_height() // 2)[1] - y)))
 
 
