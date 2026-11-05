@@ -24,7 +24,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import buffet_menu_test as buffet  # noqa: E402  (sets up the GTK versions)
+import buffet  # noqa: E402  (sets up the GTK versions)
 import buffet_remote as remote  # noqa: E402
 
 import gi  # noqa: E402
