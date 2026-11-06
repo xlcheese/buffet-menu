@@ -51,8 +51,17 @@ APPLICATIONS_DIR = os.path.join(GLib.get_user_data_dir(), "applications")
 OWN_DESKTOP_FILE = os.path.join(APPLICATIONS_DIR, APP_ID + ".desktop")
 AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", APP_ID + ".desktop")
 # In the user's icon theme, so that the panel and the menus find it by name and recolour it, as a symbolic icon
+# The icons: the Buffet button's in the header bars, the tray in the panel, and Buffet Menu's own (a cafeteria tray)
 ICON_NAME = "buffet-menu-symbolic"
-ICON_FILE = os.path.join(GLib.get_user_data_dir(), "icons", "hicolor", "scalable", "apps", ICON_NAME + ".svg")
+PANEL_ICON_NAME = "buffet-menu-tray-symbolic"
+APP_ICON_NAME = "buffet-menu"
+ICONS_DIR = os.path.join(GLib.get_user_data_dir(), "icons", "hicolor")
+ICON_FILE = os.path.join(ICONS_DIR, "scalable", "apps", ICON_NAME + ".svg")
+# Where each icon of the icons folder goes, in the user's icons: (file, size folder, name)
+ICON_FILES = (("buffet-menu-tray-symbolic.svg", "scalable", PANEL_ICON_NAME),
+              ("buffet-menu.svg", "scalable", APP_ICON_NAME),
+              # Drawn for 16 px, where the other would blur
+              ("buffet-menu-16.svg", "16x16", APP_ICON_NAME))
 # Marks the applications' menu entries that Buffet Menu wrote, so that it only ever removes its own
 MARK = "X-Buffet-Menu"
 DEFAULT_SHORTCUT = "<Control><Alt>n"
@@ -356,9 +365,17 @@ def write_own_entries():
     os.makedirs(os.path.dirname(ICON_FILE), exist_ok=True)
     with open(ICON_FILE, "w", encoding="utf-8") as target:
         target.write(buffet.ICON_SVG)
+    icons = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+    for source, size, name in ICON_FILES:
+        if os.path.exists(os.path.join(icons, source)):
+            target = os.path.join(ICONS_DIR, size, "apps", name + ".svg")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copyfile(os.path.join(icons, source), target)
+    # The folder's change time tells the icon themes of the panel and the menu to look again
+    os.utime(ICONS_DIR)
     Gtk.IconTheme.get_default().rescan_if_needed()
     os.makedirs(APPLICATIONS_DIR, exist_ok=True)
-    icon = ICON_NAME
+    icon = APP_ICON_NAME if os.path.exists(os.path.join(icons, "buffet-menu.svg")) else ICON_NAME
     command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))}"
     with open(OWN_DESKTOP_FILE, "w", encoding="utf-8") as target:
         target.write("[Desktop Entry]\nType=Application\nName=Buffet Menu\n"
@@ -401,6 +418,8 @@ class BuffetMenuApp(Gtk.Application):
         buffet.set_up_style()
         self.settings = load_settings()
         write_own_entries()
+        # The settings window's icon (in the window list and Alt+Tab)
+        Gtk.Window.set_default_icon_name(APP_ICON_NAME)
         write_launcher(self.settings["header-bar"])
         # The Buffet button of the header bar module asks for a window's menus with this action
         show_window = Gio.SimpleAction.new("show-window", GLib.VariantType.new("u"))
@@ -464,7 +483,8 @@ class BuffetMenuApp(Gtk.Application):
             return
         if shown and self.status_icon is None:
             self.status_icon = XApp.StatusIcon()
-            self.status_icon.set_icon_name(ICON_NAME)
+            self.status_icon.set_icon_name(PANEL_ICON_NAME if os.path.exists(
+                os.path.join(ICONS_DIR, "scalable", "apps", PANEL_ICON_NAME + ".svg")) else ICON_NAME)
             self.status_icon.set_tooltip_text("Buffet menu: click to show the menus of the active window")
             self.status_icon.connect("activate", lambda _icon, _button, _time: self.show_menu(False))
             menu = Gtk.Menu()
