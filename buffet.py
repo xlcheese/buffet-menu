@@ -128,6 +128,9 @@ MODE_FULL = "full"          # all the menus, in rows of columns
 MODE_SCROLL = "scroll"      # all the menus, in a pop-up that scrolls
 # The titles are 2 px larger than the menu items (1.5 pt at 96 dpi)
 HEADING_GROWTH_PX = 2
+# The headings' style, as BuffetMenu.style_headings() last worked it out
+heading_style = None
+heading_css = None
 
 
 def plain(label):
@@ -360,7 +363,6 @@ class BuffetMenu:
         self.pointer = None     # where the mouse pointer was last seen, on the screen
         self.levels = []        # the open submenus, from the outermost
         self.sub_popups = []    # a pop-up window for each depth of submenu, kept for the next time
-        self.styled = False
         self.shortcuts = SHORTCUTS_SHOW
         self.columns = [BuffetColumn(title, entries, [], self) for title, entries in menus]
         self.places = {}   # column: (row, position in the row)
@@ -657,11 +659,17 @@ class BuffetMenu:
 
     def style_headings(self):
         """Makes the menu titles 2 px larger than the items, and darker on a light theme (lighter on a dark
-        one), unless the theme sets their colour itself."""
-        if self.styled:
-            return
-        self.styled = True
-        style = self.columns[0].items[0].label.get_style_context()
+        one), unless the theme sets their colour itself. Each time the menu opens, from the theme's colours as they
+        are then: the theme may have changed since (from light to dark)."""
+        global heading_css
+        # A new menu item's label, in a new pop-up: the menu's own items may have kept their style from before a
+        # change of theme, while their pop-up was hidden
+        popup = BuffetPopup()
+        item = ItemNode()
+        label = Gtk.Label(label="Item")
+        item.add(label)
+        popup.node.add(item)
+        style = label.get_style_context()
         found, color = style.lookup_color(HEADING_COLOR)
         if not found:
             color = style.get_color(Gtk.StateFlags.NORMAL)
@@ -674,11 +682,12 @@ class BuffetMenu:
         size = font.get_size() / Pango.SCALE
         size = f"{size + HEADING_GROWTH_PX}px" if font.get_size_is_absolute() else \
                f"{size + HEADING_GROWTH_PX * 0.75:.1f}pt"
+        popup.destroy()
         css = f"menu.buffet .buffet-heading {{ color: {color.to_string()}; font-size: {size}; }}"
-        provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode())
-        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider,
-                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        # Only when it's changed: GTK restyles every window when a style is loaded
+        if css != heading_css:
+            heading_css = css
+            heading_style.load_from_data(css.encode())
 
     # Submenus
 
@@ -1058,7 +1067,12 @@ def set_up_style():
             icon.write(ICON_SVG)
     # A "-symbolic" icon is recoloured by GTK to match the theme's text colour
     Gtk.IconTheme.get_default().append_search_path(icons)
+    global heading_style
     provider = Gtk.CssProvider()
     provider.load_from_data(CSS)
     Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider,
                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    # The headings' colour and size, which follow the theme (see BuffetMenu.style_headings())
+    heading_style = Gtk.CssProvider()
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), heading_style,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
