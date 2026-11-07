@@ -433,6 +433,9 @@ add_buffet_button (GtkWindow *window, GtkWidget *header)
 
   gtk_widget_set_tooltip_text (button, "Menu");
   gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
+  /* Like the window buttons, it doesn't take the keyboard focus from where the user is typing: the keyboard
+   * shortcut opens the menu from the keyboard (and GTK would draw its focus ring once a key is pressed) */
+  gtk_widget_set_can_focus (button, FALSE);
   g_signal_connect (button, "toggled", G_CALLBACK (on_buffet_toggled), NULL);
   /* Buffet Menu says when the window's menu opens and closes, with a property of the window */
   gtk_widget_add_events (GTK_WIDGET (window), GDK_PROPERTY_CHANGE_MASK);
