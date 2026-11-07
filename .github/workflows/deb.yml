@@ -1,0 +1,64 @@
+# Builds Buffet Menu's .deb on Ubuntu 24.04, the base of Linux Mint 22.
+#
+# A version tag (git tag v0.1.0 && git push origin v0.1.0) builds it and attaches it to a GitHub Release
+# of that version. Run it by hand (Actions → Build the .deb → Run workflow) for a test build: the .deb is
+# then kept with the run, under Artifacts.
+name: Build the .deb
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debhelper dh-python dpkg-dev gettext python3 libgtk-3-dev pkgconf
+
+      - name: Check that the tag is the changelog's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(dpkg-parsechangelog --show-field Version)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME, but debian/changelog is at $version: add a changelog entry first"
+            exit 1
+          fi
+
+      - name: Build the package
+        run: |
+          dpkg-buildpackage --build=binary --unsigned-source --unsigned-changes
+          mkdir dist
+          mv ../buffet-menu_*.deb dist/
+
+      - name: Check the package
+        run: |
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buffet-menu-deb
+          path: dist/*.deb
+
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          name: Buffet Menu ${{ github.ref_name }}
+          body: |
+            Install it with:
+
+                sudo apt install ./buffet-menu_*_amd64.deb
+
+            then open Buffet Menu from the applications menu and choose your applications.

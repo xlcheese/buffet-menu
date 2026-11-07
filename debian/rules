@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python3
+
+# the program's modules are in their own folder: compile them on install, remove the
+# compiled copies again on uninstall. The header bar module there is a GTK module, not a
+# Python extension: it keeps its name
+override_dh_python3:
+	dh_python3 --no-ext-rename /usr/lib/buffet-menu

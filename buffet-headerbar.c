@@ -420,12 +420,21 @@ find_icon (GtkWidget *widget)
 {
   GtkIconTheme *theme = gtk_icon_theme_get_for_screen (gtk_widget_get_screen (widget));
   gchar *folder;
+  const gchar * const *system = g_get_system_data_dirs ();
+  guint i;
 
   if (gtk_icon_theme_has_icon (theme, ICON_NAME))
     return;
+  /* The user's (Buffet Menu run from a copy of its folder), and the system's (installed from its package) */
   folder = g_build_filename (g_get_user_data_dir (), "icons", "hicolor", "scalable", "apps", NULL);
   gtk_icon_theme_append_search_path (theme, folder);
   g_free (folder);
+  for (i = 0; system[i] != NULL; i++)
+    {
+      folder = g_build_filename (system[i], "icons", "hicolor", "scalable", "apps", NULL);
+      gtk_icon_theme_append_search_path (theme, folder);
+      g_free (folder);
+    }
 }
 
 /* The Buffet button, at the end of a header bar */

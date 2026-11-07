@@ -64,50 +64,88 @@ arrow keys move across the columns. The status line shows how long it took to ch
 
 When the menus are too tall for the screen, the menu scrolls.
 
-## The Buffet Menu app (beta)
+## The Buffet Menu app
 
-`buffet_menu.py` gives your own applications the Buffet menu, without changing them. Choose the
-applications in its window, then click the Buffet button in one of them, or press **Ctrl+Alt+N**,
-to see all its menus at once.
-
-1. Install what it needs:
-   ```bash
-   sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0
-   ```
-2. Download the project (**Code → Download ZIP**) and keep its files together in one folder.
-3. Start it:
-   ```bash
-   python3 buffet_menu.py
-   ```
-4. In its window, choose an application on the left and click **+**. Then close the application and
-   open it again from the menu: its menu bar is gone, and **Ctrl+Alt+N** shows its Buffet menu.
-5. For the **header bar with the Buffet button**, build Buffet Menu's GTK module once, then start Buffet
-   Menu again:
-   ```bash
-   sudo apt install build-essential libgtk-3-dev
-   ./build.sh
-   python3 buffet_menu.py --quit; python3 buffet_menu.py
-   ```
-   The applications you've added then open with a header bar in place of their title bar: their title,
-   the Buffet button and the window buttons.
+Buffet Menu gives your own applications the Buffet menu, without changing them. Choose the applications
+in its window: they then open with a header bar and a Buffet button, which shows all of their menus at
+once. **Ctrl+Alt+N** opens and closes it from the keyboard.
 
 ![The Buffet Menu app](screenshots/app.png)
+
+### Install
+
+On Linux Mint 22 (or Ubuntu 24.04), download `buffet-menu_0.1.0_amd64.deb` from the
+[Releases](https://github.com/xlcheese/buffet-menu/releases) page, then:
+
+```bash
+sudo apt install ./buffet-menu_0.1.0_amd64.deb
+```
+
+apt installs what it needs with it (`appmenu-gtk3-module`, `gir1.2-keybinder-3.0`). Then:
+
+1. Open **Buffet Menu** from the applications menu (it's in Preferences).
+2. Choose an application on the left and click **+**.
+3. Close the application and open it again from the menu: its menu bar is gone, and the Buffet button
+   in its header bar shows all of its menus.
+
+Buffet Menu starts at login from then on, and does its work quietly in the background: set it up, and
+forget about it.
+
+### Using it
 
 - **Each application has its own settings:** click the gear next to it. The first time its Buffet menu
   opens, it picks one row for an application with up to 4 menus, two rows for more.
 - **Keyboard shortcut and Start at login** are at the bottom of the window. Start at login is on from
   the start; without it, the applications' menu bars come back until Buffet Menu is started again.
-- **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
-  starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
-  menu panels read it, and with Buffet Menu's own module (`buffet-headerbar.c`), which gives its main
-  window the header bar and hides its menu bar while Buffet Menu runs (other applications keep theirs).
-  `−` deletes the copy, and the application is as it was.
-- **Works with** GTK3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint).
-  Tried with Xed, Nemo, LibreOffice, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks and Xcalculator. The list only offers
-  GTK3 applications; one that turns out to have a header bar of its own (and no menu bar behind it) or no
-  menu bar is taken off the list when it first opens. Tick **Show all applications** to see the others,
-  and why they're left out. Not with GTK2 applications (GIMP 2.10), GTK4, Qt, Flatpak or Wayland.
-- **To stop it:** `python3 buffet_menu.py --quit`.
+- **The menu works like a menu bar's:** keyboard shortcuts next to the items, ticks and choices that
+  follow the application, greyed-out items it has disabled, access keys with Alt, and the arrow keys.
+- **To stop it:** `buffet-menu --quit` (the menu bars come back). **To remove it:** remove each
+  application with **−** first, so that they're as they were, then `sudo apt remove buffet-menu`.
+
+### What it works with
+
+GTK 3 applications that have a menu bar, on X11 (Cinnamon, MATE and Xfce on Linux Mint). Tried with Xed,
+Nemo, LibreOffice, Inkscape 1.x, Pluma, Mousepad, gedit, Code::Blocks, Update Manager and xl-Calculator.
+
+- The list only offers GTK 3 applications. One that turns out to have a header bar of its own (and no
+  menu bar behind it), or no menu bar, is taken off the list when it first opens. Tick **Show all
+  applications** to see the others, and why they're left out.
+- Not with GTK 2 applications (GIMP 2.10), GTK 4, Qt, Flatpak or Snap applications, or Wayland.
+- The LibreOffice applications share one program: whichever opens first decides whether they all have
+  the Buffet menu.
+- Update Manager starts at login on its own: it has the Buffet menu once it's been reopened from the menu.
+- Xed 3.6 (Linux Mint 22) doesn't tell GTK when it's maximized, so its maximize button stays as it is;
+  Xed's next version fixes it.
+
+### How it works
+
+`+` puts a copy of the application's menu entry in `~/.local/share/applications`, which starts it with
+`appmenu-gtk-module`, the module that global menu panels use to read an application's menu bar over
+D-Bus, and with Buffet Menu's own module (`buffet-headerbar.c`). That one gives the main window its
+header bar and Buffet button, and hides the menu bar while Buffet Menu runs; other applications keep
+theirs. `−` deletes the copy, and the application is as it was.
+
+### Run it from the source
+
+```bash
+sudo apt install appmenu-gtk3-module gir1.2-keybinder-3.0 build-essential libgtk-3-dev gettext git
+git clone https://github.com/xlcheese/buffet-menu.git
+cd buffet-menu
+./build.sh                  # the header bar module and the translations
+python3 buffet_menu.py      # its window; python3 buffet_menu.py --quit stops it
+```
+
+`git pull` and `./build.sh` bring it up to date. The files:
+
+| File | What it is |
+|---|---|
+| `buffet_menu.py` | The app: its window, and the service that shows the Buffet menus |
+| `buffet.py` | The Buffet menu itself, and its settings |
+| `buffet_remote.py` | Reads another application's menus over D-Bus |
+| `buffet-headerbar.c` | The GTK module that gives the applications their header bar |
+| `i18n.py`, `po/` | The translations |
+| `debian/`, `Makefile` | The package: `dpkg-buildpackage -b`, or on GitHub, a version tag (see `.github/workflows/deb.yml`) |
+| `buffet_challenge.py`, `buffet_menu_test.py` | The challenge and the test window, which stand on their own |
 
 ## Translate
 

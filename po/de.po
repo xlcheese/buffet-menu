@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Buffet Menu 0.1.0\n"
 "Report-Msgid-Bugs-To: https://github.com/xlcheese/buffet-menu/issues\n"
-"POT-Creation-Date: 2026-11-07 05:23+0000\n"
+"POT-Creation-Date: 2026-11-07 05:32+0000\n"
 "PO-Revision-Date: 2026-11-07 05:25+0000\n"
 "Last-Translator: Draft by Claude (needs native review)\n"
 "Language-Team: German\n"
@@ -17,8 +17,12 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: buffet_menu.py:124
-msgid "Buffet Menu's own module, for the header bar: run ./build.sh in Buffet Menu's folder (it needs build-essential and libgtk-3-dev)"
-msgstr "Das eigene Modul von Buffet Menu, für die Kopfleiste: Führen Sie ./build.sh im Ordner von Buffet Menu aus (benötigt build-essential und libgtk-3-dev)"
+msgid ""
+"Buffet Menu's own module, for the header bar: run ./build.sh in Buffet "
+"Menu's folder (it needs build-essential and libgtk-3-dev)"
+msgstr ""
+"Das eigene Modul von Buffet Menu, für die Kopfleiste: Führen Sie ./build.sh "
+"im Ordner von Buffet Menu aus (benötigt build-essential und libgtk-3-dev)"
 
 #: buffet_menu.py:127
 msgid "appmenu-gtk3-module (to read the applications' menus)"
@@ -28,175 +32,192 @@ msgstr "appmenu-gtk3-module (um die Menüs der Anwendungen zu lesen)"
 msgid "gir1.2-keybinder-3.0 (for the keyboard shortcut)"
 msgstr "gir1.2-keybinder-3.0 (für das Tastenkürzel)"
 
-#: buffet_menu.py:495
+#: buffet_menu.py:516
 msgid "This window doesn't have the Buffet menu"
 msgstr "Dieses Fenster hat kein Buffet-Menü"
 
-#: buffet_menu.py:496
-msgid "Add its application in Buffet Menu's settings, then close and reopen it."
-msgstr "Fügen Sie seine Anwendung in den Einstellungen von Buffet Menu hinzu, dann schließen und öffnen Sie sie erneut."
+#: buffet_menu.py:517
+msgid ""
+"Add its application in Buffet Menu's settings, then close and reopen it."
+msgstr ""
+"Fügen Sie seine Anwendung in den Einstellungen von Buffet Menu hinzu, dann "
+"schließen und öffnen Sie sie erneut."
 
-#: buffet_menu.py:504
+#: buffet_menu.py:525
 #, python-brace-format
 msgid "{application} has no menu bar"
 msgstr "{application} hat keine Menüleiste"
 
-#: buffet_menu.py:505
+#: buffet_menu.py:526
 msgid "Its menus can't be shown as a Buffet menu."
 msgstr "Ihre Menüs können nicht als Buffet-Menü angezeigt werden."
 
-#: buffet_menu.py:594
+#: buffet_menu.py:615
 msgid "It has a header bar of its own."
 msgstr "Sie hat eine eigene Kopfleiste."
 
-#: buffet_menu.py:594
+#: buffet_menu.py:615
 msgid "It has no menu bar."
 msgstr "Sie hat keine Menüleiste."
 
-#: buffet_menu.py:595
+#: buffet_menu.py:616
 #, python-brace-format
 msgid "{application} can't have the Buffet menu"
 msgstr "{application} kann kein Buffet-Menü haben"
 
-#: buffet_menu.py:596
-msgid "It was taken off Buffet Menu's list, and will be as before when you reopen it."
-msgstr "Sie wurde aus der Liste von Buffet Menu entfernt und ist beim nächsten Öffnen wieder wie zuvor."
+#: buffet_menu.py:617
+msgid ""
+"It was taken off Buffet Menu's list, and will be as before when you reopen "
+"it."
+msgstr ""
+"Sie wurde aus der Liste von Buffet Menu entfernt und ist beim nächsten "
+"Öffnen wieder wie zuvor."
 
-#: buffet_menu.py:705
+#: buffet_menu.py:726
 #, python-brace-format
 msgid "Settings of the Buffet menu of {application}"
 msgstr "Einstellungen des Buffet-Menüs von {application}"
 
-#: buffet_menu.py:717 buffet_menu.py:720
+#: buffet_menu.py:738 buffet_menu.py:741
 msgid "Buffet Menu"
 msgstr "Buffet Menu"
 
-#: buffet_menu.py:720
+#: buffet_menu.py:741 data/io.github.xlcheese.BuffetMenu.desktop.in:5
 msgid "Every menu of your applications at once"
 msgstr "Alle Menüs Ihrer Anwendungen auf einmal"
 
-#: buffet_menu.py:730
+#: buffet_menu.py:751
 msgid "Buffet Menu needs some packages that aren't installed:"
 msgstr "Buffet Menu benötigt einige Pakete, die nicht installiert sind:"
 
-#: buffet_menu.py:732
+#: buffet_menu.py:753
 msgid "Install them with:"
 msgstr "Installieren Sie sie mit:"
 
-#: buffet_menu.py:742
+#: buffet_menu.py:763
 msgid "Applications"
 msgstr "Anwendungen"
 
-#: buffet_menu.py:743
+#: buffet_menu.py:764
 msgid "Search"
 msgstr "Suchen"
 
-#: buffet_menu.py:750
+#: buffet_menu.py:771
 msgid "Show all applications"
 msgstr "Alle Anwendungen anzeigen"
 
-#: buffet_menu.py:751
-msgid "Also those that can't have the Buffet menu, as far as Buffet Menu can tell: GTK 2, GTK 4 or Qt ones, for example"
-msgstr "Auch solche, die kein Buffet-Menü haben können, soweit Buffet Menu das erkennen kann: zum Beispiel GTK-2-, GTK-4- oder Qt-Anwendungen"
+#: buffet_menu.py:772
+msgid ""
+"Also those that can't have the Buffet menu, as far as Buffet Menu can tell: "
+"GTK 2, GTK 4 or Qt ones, for example"
+msgstr ""
+"Auch solche, die kein Buffet-Menü haben können, soweit Buffet Menu das "
+"erkennen kann: zum Beispiel GTK-2-, GTK-4- oder Qt-Anwendungen"
 
-#: buffet_menu.py:759
+#: buffet_menu.py:780
 msgid "Give the Buffet menu to this application"
 msgstr "Dieser Anwendung das Buffet-Menü geben"
 
-#: buffet_menu.py:761
+#: buffet_menu.py:782
 msgid "Take the Buffet menu away from this application"
 msgstr "Dieser Anwendung das Buffet-Menü wegnehmen"
 
-#: buffet_menu.py:771
+#: buffet_menu.py:792
 msgid "With the Buffet menu"
 msgstr "Mit Buffet-Menü"
 
-#: buffet_menu.py:774
+#: buffet_menu.py:795
 msgid "Close and reopen an application after adding or removing it."
-msgstr "Schließen und öffnen Sie eine Anwendung erneut, nachdem Sie sie hinzugefügt oder entfernt haben."
+msgstr ""
+"Schließen und öffnen Sie eine Anwendung erneut, nachdem Sie sie hinzugefügt "
+"oder entfernt haben."
 
-#: buffet_menu.py:789
+#: buffet_menu.py:810
 msgid "Keyboard shortcut"
 msgstr "Tastenkürzel"
 
-#: buffet_menu.py:789
+#: buffet_menu.py:810
 msgid "Shows the Buffet menu of the active window"
 msgstr "Zeigt das Buffet-Menü des aktiven Fensters"
 
-#: buffet_menu.py:790
+#: buffet_menu.py:811
 msgid "Start at login"
 msgstr "Bei der Anmeldung starten"
 
-#: buffet_menu.py:790
+#: buffet_menu.py:811
 msgid "Without it, the menu bars come back until Buffet Menu is started"
-msgstr "Ohne dies kommen die Menüleisten zurück, bis Buffet Menu gestartet wird"
+msgstr ""
+"Ohne dies kommen die Menüleisten zurück, bis Buffet Menu gestartet wird"
 
-#: buffet_menu.py:846
+#: buffet_menu.py:867
 msgid "Has a header bar of its own"
 msgstr "Hat eine eigene Kopfleiste"
 
-#: buffet_menu.py:848
+#: buffet_menu.py:869
 msgid "Has no menu bar"
 msgstr "Hat keine Menüleiste"
 
-#: buffet_menu.py:850
+#: buffet_menu.py:871
 msgid "A GTK 4 application"
 msgstr "Eine GTK-4-Anwendung"
 
-#: buffet_menu.py:850
+#: buffet_menu.py:871
 msgid "A GTK 2 application"
 msgstr "Eine GTK-2-Anwendung"
 
-#: buffet_menu.py:851
+#: buffet_menu.py:872
 msgid "A Qt application"
 msgstr "Eine Qt-Anwendung"
 
-#: buffet_menu.py:851
+#: buffet_menu.py:872
 msgid "Runs as the administrator"
 msgstr "Läuft als Administrator"
 
-#: buffet_menu.py:852
+#: buffet_menu.py:873
 msgid "Not a GTK 3 application"
 msgstr "Keine GTK-3-Anwendung"
 
-#: buffet_menu.py:857
+#: buffet_menu.py:878
 msgid "No menu bar found: this application can't have the Buffet menu"
 msgstr "Keine Menüleiste gefunden: Diese Anwendung kann kein Buffet-Menü haben"
 
-#: buffet_menu.py:859
+#: buffet_menu.py:880
 #, python-brace-format
 msgid "{count} menu"
 msgid_plural "{count} menus"
 msgstr[0] "{count} Menü"
 msgstr[1] "{count} Menüs"
 
-#: buffet_menu.py:861
+#: buffet_menu.py:882
 msgid "Not opened yet: reopen it, then click its Buffet button"
-msgstr "Noch nicht geöffnet: Öffnen Sie sie erneut und klicken Sie auf ihren Buffet-Knopf"
+msgstr ""
+"Noch nicht geöffnet: Öffnen Sie sie erneut und klicken Sie auf ihren Buffet-"
+"Knopf"
 
-#: buffet_menu.py:863
+#: buffet_menu.py:884
 #, python-brace-format
 msgid "Not opened yet: reopen it, then press {shortcut} in it"
-msgstr "Noch nicht geöffnet: Öffnen Sie sie erneut und drücken Sie darin {shortcut}"
+msgstr ""
+"Noch nicht geöffnet: Öffnen Sie sie erneut und drücken Sie darin {shortcut}"
 
-#: buffet_menu.py:887
+#: buffet_menu.py:908
 #, python-brace-format
 msgid "Buffet menu of {application}"
 msgstr "Buffet-Menü von {application}"
 
-#: buffet_menu.py:902
+#: buffet_menu.py:923
 msgid "None"
 msgstr "Keines"
 
-#: buffet_menu.py:906
+#: buffet_menu.py:927
 msgid "Press the keys… (Esc to cancel)"
 msgstr "Tasten drücken … (Esc zum Abbrechen)"
 
-#: buffet_menu.py:923
+#: buffet_menu.py:944
 msgid "That shortcut is taken"
 msgstr "Dieses Tastenkürzel ist bereits vergeben"
 
-#: buffet_menu.py:923
+#: buffet_menu.py:944
 msgid "Choose another one for Buffet Menu."
 msgstr "Wählen Sie ein anderes für Buffet Menu."
 
@@ -231,7 +252,9 @@ msgstr "Eine Reihe, dann _gleiche Reihen"
 
 #: buffet.py:1018
 msgid "If one row doesn't fit, as few rows as fit, with as many menus in each"
-msgstr "Wenn eine Reihe nicht passt, so wenige Reihen wie möglich, mit gleich vielen Menüs"
+msgstr ""
+"Wenn eine Reihe nicht passt, so wenige Reihen wie möglich, mit gleich vielen "
+"Menüs"
 
 #: buffet.py:1019
 msgid "One row, then fi_ll each row"
@@ -286,16 +309,24 @@ msgid "Move the _menu up"
 msgstr "Menü nach _oben verschieben"
 
 #: buffet.py:1030
-msgid "Above the title bar, or over it,\nwith the rows as they are"
-msgstr "Über der Titelleiste oder darüber gelegt,\nmit den Reihen, wie sie sind"
+msgid ""
+"Above the title bar, or over it,\n"
+"with the rows as they are"
+msgstr ""
+"Über der Titelleiste oder darüber gelegt,\n"
+"mit den Reihen, wie sie sind"
 
 #: buffet.py:1031
 msgid "Change the _rows to fit"
 msgstr "_Reihen passend ändern"
 
 #: buffet.py:1031
-msgid "Below the title bar,\nwith fewer, wider rows"
-msgstr "Unter der Titelleiste,\nmit weniger, breiteren Reihen"
+msgid ""
+"Below the title bar,\n"
+"with fewer, wider rows"
+msgstr ""
+"Unter der Titelleiste,\n"
+"mit weniger, breiteren Reihen"
 
 #: buffet.py:1033
 msgid "Rows"
@@ -306,16 +337,24 @@ msgid "Lined _up"
 msgstr "Ausgerich_tet"
 
 #: buffet.py:1034
-msgid "Each row starts at the same height,\nwith a line between rows"
-msgstr "Jede Reihe beginnt auf gleicher Höhe,\nmit einer Linie zwischen den Reihen"
+msgid ""
+"Each row starts at the same height,\n"
+"with a line between rows"
+msgstr ""
+"Jede Reihe beginnt auf gleicher Höhe,\n"
+"mit einer Linie zwischen den Reihen"
 
 #: buffet.py:1035
 msgid "Stac_ked up"
 msgstr "Gesta_pelt"
 
 #: buffet.py:1035
-msgid "Each menu right under the one above it:\nshorter, but busier"
-msgstr "Jedes Menü direkt unter dem darüber:\nkürzer, aber unruhiger"
+msgid ""
+"Each menu right under the one above it:\n"
+"shorter, but busier"
+msgstr ""
+"Jedes Menü direkt unter dem darüber:\n"
+"kürzer, aber unruhiger"
 
 #: buffet.py:1037
 msgid "Keyboard shortcuts"
@@ -347,8 +386,15 @@ msgstr "Die schmalsten Menüs"
 
 #: buffet.py:1058
 msgid "Chosen the first time this menu opens, from how many menus there are"
-msgstr "Wird beim ersten Öffnen dieses Menüs gewählt, je nachdem, wie viele Menüs es gibt"
+msgstr ""
+"Wird beim ersten Öffnen dieses Menüs gewählt, je nachdem, wie viele Menüs es "
+"gibt"
 
-#: buffet-headerbar.c:441
+#: buffet-headerbar.c:450
 msgid "Menu"
 msgstr "Menü"
+
+#. Translators: search words for the applications menu, separated by semicolons
+#: data/io.github.xlcheese.BuffetMenu.desktop.in:7
+msgid "menu;menu bar;header bar;applications;"
+msgstr "Menü;Menüleiste;Kopfleiste;Anwendungen;menu;menubar;"

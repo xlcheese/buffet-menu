@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Buffet Menu
+Comment=Every menu of your applications at once
+# Translators: search words for the applications menu, separated by semicolons
+Keywords=menu;menu bar;header bar;applications;
+Exec=buffet-menu
+Icon=buffet-menu
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;DesktopSettings;

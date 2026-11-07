@@ -1,0 +1,21 @@
+buffet-menu (0.1.0) unstable; urgency=medium
+
+  * First release. Buffet Menu gives the GTK 3 applications you choose a
+    header bar with a Buffet button, which shows all of their menus at
+    once, laid out side by side, in place of the menu bar.
+  * Each application has its own layout settings: one row, equal rows,
+    two rows or a set number of menus per row, as wide as the window or
+    the screen, and keyboard shortcuts next to the items, in tooltips or
+    hidden.
+  * A keyboard shortcut (Ctrl+Alt+N) opens the Buffet menu of the active
+    window, and closes it again.
+  * The menus open at once: they're loaded and laid out as soon as a
+    window appears, and kept while they don't change.
+  * Disabled items are greyed out, and ticks and choices follow the
+    application.
+  * Only the applications given the Buffet menu hide their menu bar, and
+    only while Buffet Menu runs. It starts at login.
+  * Draft translations into Spanish, French, German, and Brazilian
+    Portuguese, waiting for a review by native speakers.
+
+ -- Wesley Hayslip <xl_cheese@hotmail.com>  Sat, 07 Nov 2026 12:00:00 +0000

@@ -359,8 +359,25 @@ def app_name(app):
     return info.get_display_name() if info else app
 
 
+# Installed from its package: its menu entry, icons and translations are the system's, and its command is
+# buffet-menu. Otherwise it runs from a copy of its folder, and puts them in the user's own folders
+INSTALLED = os.path.abspath(__file__).startswith("/usr/")
+
+
+def program_command():
+    """The command that starts Buffet Menu, for its menu entry and for starting at login."""
+    if INSTALLED:
+        return "buffet-menu"
+    return f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))}"
+
+
 def write_own_entries():
-    """Buffet Menu's own menu entry, so that it appears among the applications, and its icon."""
+    """Buffet Menu's own menu entry, so that it appears among the applications, and its icons. Installed, the
+    package has them: the entry that a copy of its folder wrote earlier is removed, as it would hide the package's."""
+    if INSTALLED:
+        if os.path.exists(OWN_DESKTOP_FILE):
+            os.remove(OWN_DESKTOP_FILE)
+        return
     os.makedirs(os.path.dirname(ICON_FILE), exist_ok=True)
     with open(ICON_FILE, "w", encoding="utf-8") as target:
         target.write(buffet.ICON_SVG)
@@ -375,7 +392,7 @@ def write_own_entries():
     Gtk.IconTheme.get_default().rescan_if_needed()
     os.makedirs(APPLICATIONS_DIR, exist_ok=True)
     icon = APP_ICON_NAME if os.path.exists(os.path.join(icons, "buffet-menu.svg")) else ICON_NAME
-    command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))}"
+    command = program_command()
     with open(OWN_DESKTOP_FILE, "w", encoding="utf-8") as target:
         comment = "Every menu of your applications at once"
         target.write("[Desktop Entry]\nType=Application\nName=Buffet Menu\n"
@@ -390,7 +407,7 @@ def set_autostart(enabled):
             os.remove(AUTOSTART_FILE)
         return
     os.makedirs(os.path.dirname(AUTOSTART_FILE), exist_ok=True)
-    command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))} --service"
+    command = program_command() + " --service"
     with open(AUTOSTART_FILE, "w", encoding="utf-8") as target:
         target.write("[Desktop Entry]\nType=Application\nName=Buffet Menu\n"
                      "Comment=Shows the menus of your applications as a Buffet menu\n"
@@ -420,6 +437,10 @@ class BuffetMenuApp(Gtk.Application):
         write_own_entries()
         # Set up and forgotten: Buffet Menu starts at login, unless that's been turned off in its window. Without it,
         # the applications' menu bars come back after a restart, until Buffet Menu is started again
+        # Started at login by this copy of Buffet Menu: by the installed one, once it's installed, not a copy of
+        # its folder that it was run from before
+        if os.path.exists(AUTOSTART_FILE):
+            set_autostart(True)
         if not self.settings.get("start-at-login-chosen"):
             set_autostart(True)
             self.settings["start-at-login-chosen"] = True
