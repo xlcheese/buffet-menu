@@ -15,8 +15,15 @@
  * Build: gcc -shared -fPIC -O2 -o libbuffet-headerbar.so buffet-headerbar.c $(pkg-config --cflags --libs gtk+-3.0)
  */
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <libintl.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
+
+/* Its texts are translated with Buffet Menu's (gettext domain buffet-menu) */
+#define TEXT_DOMAIN "buffet-menu"
+#define _(text) dgettext (TEXT_DOMAIN, text)
 
 #define SERVICE "io.github.xlcheese.BuffetMenu"
 #define SERVICE_PATH "/io/github/xlcheese/BuffetMenu"
@@ -431,7 +438,7 @@ add_buffet_button (GtkWindow *window, GtkWidget *header)
   button = gtk_toggle_button_new ();
   gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name (ICON_NAME, GTK_ICON_SIZE_BUTTON));
 
-  gtk_widget_set_tooltip_text (button, "Menu");
+  gtk_widget_set_tooltip_text (button, _("Menu"));
   gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
   /* Like the window buttons, it doesn't take the keyboard focus from where the user is typing: the keyboard
    * shortcut opens the menu from the keyboard (and GTK would draw its focus ring once a key is pressed) */
@@ -635,6 +642,26 @@ restore_environment (void)
   g_unsetenv ("BUFFET_MENU_APP");
 }
 
+/* Where the translations are: beside the module, in a copy of Buffet Menu's folder (build.sh puts them there), or
+ * else the system's, once Buffet Menu is installed */
+static void
+find_translations (void)
+{
+  Dl_info module;
+  gchar *folder, *translations;
+
+  if (dladdr ((void *) find_translations, &module) && module.dli_fname != NULL)
+    {
+      folder = g_path_get_dirname (module.dli_fname);
+      translations = g_build_filename (folder, "locale", NULL);
+      if (g_file_test (translations, G_FILE_TEST_IS_DIR))
+        bindtextdomain (TEXT_DOMAIN, translations);
+      g_free (translations);
+      g_free (folder);
+    }
+  bind_textdomain_codeset (TEXT_DOMAIN, "UTF-8");
+}
+
 G_MODULE_EXPORT void
 gtk_module_init (gint *argc, gchar ***argv)
 {
@@ -644,6 +671,7 @@ gtk_module_init (gint *argc, gchar ***argv)
     return;
   original_realize = klass->realize;
   app_id = g_strdup (g_getenv ("BUFFET_MENU_APP"));
+  find_translations ();
   restore_environment ();
   replace_realize (GTK_TYPE_WINDOW);
   g_bus_watch_name (G_BUS_TYPE_SESSION, SERVICE, G_BUS_NAME_WATCHER_FLAGS_NONE, on_service_appeared,

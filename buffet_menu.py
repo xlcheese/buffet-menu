@@ -25,6 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import buffet  # noqa: E402  (sets up the GTK versions)
+from i18n import _, ngettext, translations  # noqa: E402
 import buffet_remote as remote  # noqa: E402
 
 import gi  # noqa: E402
@@ -120,12 +121,12 @@ def missing_packages():
     """What Buffet Menu needs that isn't installed, in words."""
     missing = []
     if not os.path.exists(HEADER_BAR_MODULE):
-        missing.append("Buffet Menu's own module, for the header bar: run ./build.sh in Buffet Menu's folder "
-                       "(it needs build-essential and libgtk-3-dev)")
+        missing.append(_("Buffet Menu's own module, for the header bar: run ./build.sh in Buffet Menu's folder "
+                         "(it needs build-essential and libgtk-3-dev)"))
     if not any(glob.glob(pattern) for pattern in MODULE_FILES):
-        missing.append("appmenu-gtk3-module (to read the applications' menus)")
+        missing.append(_("appmenu-gtk3-module (to read the applications' menus)"))
     if Keybinder is None:
-        missing.append("gir1.2-keybinder-3.0 (for the keyboard shortcut)")
+        missing.append(_("gir1.2-keybinder-3.0 (for the keyboard shortcut)"))
     return missing
 
 
@@ -376,8 +377,10 @@ def write_own_entries():
     icon = APP_ICON_NAME if os.path.exists(os.path.join(icons, "buffet-menu.svg")) else ICON_NAME
     command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))}"
     with open(OWN_DESKTOP_FILE, "w", encoding="utf-8") as target:
+        comment = "Every menu of your applications at once"
         target.write("[Desktop Entry]\nType=Application\nName=Buffet Menu\n"
-                     "Comment=Every menu of your applications at once\n"
+                     f"Comment={comment}\n" +
+                     "".join(f"Comment[{language}]={text}\n" for language, text in translations(comment).items()) +
                      f"Exec={command}\nIcon={icon}\nCategories=Settings;DesktopSettings;\n")
 
 
@@ -489,8 +492,8 @@ class BuffetMenuApp(Gtk.Application):
         xid = xid or remote.active_window()
         published = remote.window_menu(xid)
         if published is None:
-            self.notify("This window doesn't have the Buffet menu",
-                        "Add its application in Buffet Menu's settings, then close and reopen it.")
+            self.notify(_("This window doesn't have the Buffet menu"),
+                        _("Add its application in Buffet Menu's settings, then close and reopen it."))
             return False
         app = window_app(xid)
         entry = app_settings(self.settings, app)
@@ -498,7 +501,8 @@ class BuffetMenuApp(Gtk.Application):
         if not menus:
             entry["no-menu-bar"] = True
             self.changed()
-            self.notify(f"{app_name(app)} has no menu bar", "Its menus can't be shown as a Buffet menu.")
+            self.notify(_("{application} has no menu bar").format(application=app_name(app)),
+                        _("Its menus can't be shown as a Buffet menu."))
             return False
         if entry["menus"] != len(menus) or entry["no-menu-bar"] or entry["own-header-bar"]:
             entry["menus"] = len(menus)
@@ -587,9 +591,9 @@ class BuffetMenuApp(Gtk.Application):
         entry[reason] = True
         disable(app)
         self.changed()
-        why = "has a header bar of its own" if reason == "own-header-bar" else "has no menu bar"
-        self.notify(f"{app_name(app)} can't have the Buffet menu",
-                    f"It {why}, so it was taken off Buffet Menu's list. It will be as before when you reopen it.")
+        why = _("It has a header bar of its own.") if reason == "own-header-bar" else _("It has no menu bar.")
+        self.notify(_("{application} can't have the Buffet menu").format(application=app_name(app)),
+                    why + " " + _("It was taken off Buffet Menu's list, and will be as before when you reopen it."))
         return False
 
     def load_open_windows(self):
@@ -698,7 +702,8 @@ class AppRow(Gtk.ListBoxRow):
         box.pack_start(text, True, True, 0)
         if on_settings:
             gear = Gtk.Button(relief=Gtk.ReliefStyle.NONE, valign=Gtk.Align.CENTER,
-                              tooltip_text=f"Settings of {self.name}'s Buffet menu")
+                              tooltip_text=_("Settings of the Buffet menu of {application}").format(
+                                  application=self.name))
             gear.set_image(Gtk.Image.new_from_icon_name("emblem-system-symbolic", Gtk.IconSize.BUTTON))
             gear.connect("clicked", lambda _button: on_settings(app, self.name))
             box.pack_end(gear, False, False, 0)
@@ -709,10 +714,10 @@ class SettingsWindow(Gtk.ApplicationWindow):
     """Which applications have the Buffet menu, each with its settings, and the service's settings."""
 
     def __init__(self, app):
-        super().__init__(application=app, title="Buffet Menu")
+        super().__init__(application=app, title=_("Buffet Menu"))
         self.app = app
         self.set_default_size(860, 600)
-        header = Gtk.HeaderBar(title="Buffet Menu", subtitle="Every menu of your applications at once",
+        header = Gtk.HeaderBar(title=_("Buffet Menu"), subtitle=_("Every menu of your applications at once"),
                                show_close_button=True)
         self.set_titlebar(header)
 
@@ -722,9 +727,10 @@ class SettingsWindow(Gtk.ApplicationWindow):
         if missing:
             bar = Gtk.InfoBar(message_type=Gtk.MessageType.WARNING)
             text = Gtk.Label(xalign=0, wrap=True, selectable=True)
-            text.set_markup("<b>Buffet Menu needs some packages that aren't installed:</b>\n" +
-                            "\n".join(f"  • {GLib.markup_escape_text(item)}" for item in missing) +
-                            f"\nInstall them with:  <tt>{GLib.markup_escape_text(INSTALL_COMMAND)}</tt>")
+            text.set_markup("<b>" + GLib.markup_escape_text(_("Buffet Menu needs some packages that aren't installed:")) +
+                            "</b>\n" + "\n".join(f"  • {GLib.markup_escape_text(item)}" for item in missing) + "\n" +
+                            GLib.markup_escape_text(_("Install them with:")) +
+                            f"  <tt>{GLib.markup_escape_text(INSTALL_COMMAND)}</tt>")
             bar.get_content_area().add(text)
             page.pack_start(bar, False, False, 0)
 
@@ -733,26 +739,26 @@ class SettingsWindow(Gtk.ApplicationWindow):
 
         # The applications that can have the Buffet menu
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        left.pack_start(self.heading("Applications"), False, False, 0)
-        self.search = Gtk.SearchEntry(placeholder_text="Search")
+        left.pack_start(self.heading(_("Applications")), False, False, 0)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"))
         self.search.connect("search-changed", lambda _entry: self.available.invalidate_filter())
         left.pack_start(self.search, False, False, 0)
         self.available = Gtk.ListBox(activate_on_single_click=False)
         self.available.set_filter_func(self.matches_search)
         self.available.connect("row-activated", lambda _list, _row: self.add_selected())
         left.pack_start(self.framed(self.available), True, True, 0)
-        self.show_all_apps = Gtk.CheckButton(label="Show all applications",
-                                             tooltip_text="Also those that can't have the Buffet menu, as far as "
-                                                          "Buffet Menu can tell: GTK 2, GTK 4 or Qt ones, for example")
+        self.show_all_apps = Gtk.CheckButton(label=_("Show all applications"),
+                                             tooltip_text=_("Also those that can't have the Buffet menu, as far as "
+                                                            "Buffet Menu can tell: GTK 2, GTK 4 or Qt ones, for example"))
         self.show_all_apps.connect("toggled", lambda _button: self.refresh())
         left.pack_start(self.show_all_apps, False, False, 0)
         lists.pack_start(left, True, True, 0)
 
         # + and −
         buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
-        for icon, tooltip, action in (("list-add-symbolic", "Give the Buffet menu to this application",
+        for icon, tooltip, action in (("list-add-symbolic", _("Give the Buffet menu to this application"),
                                        self.add_selected),
-                                      ("list-remove-symbolic", "Take the Buffet menu away from this application",
+                                      ("list-remove-symbolic", _("Take the Buffet menu away from this application"),
                                        self.remove_selected)):
             button = Gtk.Button(tooltip_text=tooltip)
             button.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.BUTTON))
@@ -762,10 +768,10 @@ class SettingsWindow(Gtk.ApplicationWindow):
 
         # The applications that have it
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        right.pack_start(self.heading("With the Buffet menu"), False, False, 0)
+        right.pack_start(self.heading(_("With the Buffet menu")), False, False, 0)
         self.chosen = Gtk.ListBox()
         right.pack_start(self.framed(self.chosen), True, True, 0)
-        note = Gtk.Label(label="Close and reopen an application after adding or removing it.", xalign=0, wrap=True)
+        note = Gtk.Label(label=_("Close and reopen an application after adding or removing it."), xalign=0, wrap=True)
         note.get_style_context().add_class("dim-label")
         right.pack_start(note, False, False, 0)
         lists.pack_start(right, True, True, 0)
@@ -780,8 +786,8 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.shortcut_button.set_sensitive(Keybinder is not None)
         login = Gtk.Switch(active=os.path.exists(AUTOSTART_FILE), halign=Gtk.Align.START)
         login.connect("notify::active", self.on_start_at_login)
-        rows = (("Keyboard shortcut", self.shortcut_button, "Shows the Buffet menu of the active window"),
-                ("Start at login", login, "Without it, the menu bars come back until Buffet Menu is started"))
+        rows = ((_("Keyboard shortcut"), self.shortcut_button, _("Shows the Buffet menu of the active window")),
+                (_("Start at login"), login, _("Without it, the menu bars come back until Buffet Menu is started")))
         for row, (label, widget, note_text) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             grid.attach(widget, 1, row, 1, 1)
@@ -837,23 +843,24 @@ class SettingsWindow(Gtk.ApplicationWindow):
         """Why an application can't have the Buffet menu, or None if it can: a GTK 3 one, with a menu bar."""
         entry = self.app.settings["apps"].get(info.get_id(), {})
         if entry.get("own-header-bar"):
-            return "Has a header bar of its own"
+            return _("Has a header bar of its own")
         if entry.get("no-menu-bar"):
-            return "Has no menu bar"
+            return _("Has no menu bar")
         toolkit = app_toolkit(info)
-        return {"gtk3": None, "gtk4": "A GTK 4 application", "gtk2": "A GTK 2 application",
-                "qt": "A Qt application", "admin": "Runs as the administrator"}.get(toolkit, "Not a GTK 3 application")
+        return {"gtk3": None, "gtk4": _("A GTK 4 application"), "gtk2": _("A GTK 2 application"),
+                "qt": _("A Qt application"), "admin": _("Runs as the administrator")}.get(
+                    toolkit, _("Not a GTK 3 application"))
 
     def status(self, app):
         entry = self.app.settings["apps"].get(app, {})
         if entry.get("no-menu-bar"):
-            return "No menu bar found: this application can't have the Buffet menu"
+            return _("No menu bar found: this application can't have the Buffet menu")
         if entry.get("menus"):
-            return f"{entry['menus']} menus"
+            return ngettext("{count} menu", "{count} menus", entry["menus"]).format(count=entry["menus"])
         if os.path.exists(HEADER_BAR_MODULE):
-            return "Not opened yet: reopen it, then click its Buffet button"
+            return _("Not opened yet: reopen it, then click its Buffet button")
         shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
-        return f"Not opened yet: reopen it, then press {shortcut} in it"
+        return _("Not opened yet: reopen it, then press {shortcut} in it").format(shortcut=shortcut)
 
     def add_selected(self):
         row = self.available.get_selected_row()
@@ -877,7 +884,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
         dialog = self.preferences.get(app)
         if dialog is None:
             dialog = buffet.PreferencesDialog(self, entry, entry["menus"] or 12, lambda: save_settings(self.app.settings),
-                                              title=f"Buffet menu of {name}")
+                                              title=_("Buffet menu of {application}").format(application=name))
             self.preferences[app] = dialog
         dialog.present()
 
@@ -892,11 +899,11 @@ class SettingsWindow(Gtk.ApplicationWindow):
     def set_shortcut_label(self):
         shortcut = self.app.settings["shortcut"]
         self.shortcut_button.set_label(Gtk.accelerator_get_label(*Gtk.accelerator_parse(shortcut)) if shortcut
-                                       else "None")
+                                       else _("None"))
 
     def on_change_shortcut(self, _button):
         self.capturing = True
-        self.shortcut_button.set_label("Press the keys… (Esc to cancel)")
+        self.shortcut_button.set_label(_("Press the keys… (Esc to cancel)"))
 
     def on_key_press(self, _window, event):
         if not self.capturing:
@@ -913,7 +920,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
             else:
                 # Taken by something else: keep the old one
                 self.app.bind_shortcut(self.app.settings["shortcut"])
-                self.app.notify("That shortcut is taken", "Choose another one for Buffet Menu.")
+                self.app.notify(_("That shortcut is taken"), _("Choose another one for Buffet Menu."))
             self.capturing = False
             self.set_shortcut_label()
         return True

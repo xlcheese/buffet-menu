@@ -109,6 +109,23 @@ to see all its menus at once.
   and why they're left out. Not with GTK2 applications (GIMP 2.10), GTK4, Qt, Flatpak or Wayland.
 - **To stop it:** `python3 buffet_menu.py --quit`.
 
+## Translate
+
+Buffet Menu uses gettext. Spanish, French, German, and Brazilian Portuguese are included as drafts
+that still need a review by native speakers: corrections are very welcome. `./build.sh` compiles them
+(it needs `gettext`: `sudo apt install gettext`), and `make pot` updates `po/buffet-menu.pot` after any
+text in the program changes.
+
+To start a new language, for example Italian:
+
+```
+msginit -i po/buffet-menu.pot -l it -o po/it.po
+```
+
+then translate the `msgstr` lines in `po/it.po` (with Poedit, or any text editor), add `it` to
+`po/LINGUAS`, and run `./build.sh`. To try it: `LANGUAGE=it python3 buffet_menu.py`. Text in braces, such
+as `{application}`, stays as it is, and an underscore marks the letter of an access key (`_Hide`).
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).

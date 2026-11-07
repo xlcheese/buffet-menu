@@ -15,6 +15,8 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
+from i18n import _  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # A copy of icons/buffet-menu-symbolic.svg, used when the script is run on its own without the icons folder
@@ -239,7 +241,8 @@ class BuffetItem(Gtk.EventBox):
         if self.accel_node is None:
             return
         self.accel_node.set_visible(shortcuts == SHORTCUTS_SHOW)
-        self.set_tooltip_text(f"Shortcut: {self.accel_label}" if shortcuts == SHORTCUTS_TOOLTIP else None)
+        self.set_tooltip_text(_("Shortcut: {shortcut}").format(shortcut=self.accel_label)
+                              if shortcuts == SHORTCUTS_TOOLTIP else None)
 
     def set_selected(self, selected):
         if selected:
@@ -382,7 +385,7 @@ class BuffetMenu:
         # Shown only when the menu has to cover the header bar: the Buffet icon, where the header bar's one is
         # hidden under the menu, to close it
         self.cover_bar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, no_show_all=True)
-        self.cover_button = Gtk.Button(tooltip_text="Close the menu", halign=Gtk.Align.START, margin_top=4,
+        self.cover_button = Gtk.Button(tooltip_text=_("Close the menu"), halign=Gtk.Align.START, margin_top=4,
                                        margin_bottom=4)
         self.cover_button.set_image(Gtk.Image.new_from_icon_name("buffet-menu-symbolic", Gtk.IconSize.BUTTON))
         self.cover_button.connect("clicked", lambda _button: self.close())
@@ -989,11 +992,11 @@ def scroll_to(item):
 class PreferencesDialog(Gtk.Dialog):
     """The buffet menu's settings, as they could appear in an application's preferences."""
 
-    def __init__(self, parent, settings, menu_count, on_changed, title="Preferences"):
-        super().__init__(title=title, transient_for=parent, resizable=False)
+    def __init__(self, parent, settings, menu_count, on_changed, title=None):
+        super().__init__(title=title or _("Preferences"), transient_for=parent, resizable=False)
         self.settings = settings
         self.on_changed = on_changed
-        self.add_button("_Close", Gtk.ResponseType.CLOSE)
+        self.add_button(_("_Close"), Gtk.ResponseType.CLOSE)
         self.connect("response", lambda dialog, _response: dialog.hide())
         self.connect("delete-event", lambda dialog, _event: dialog.hide_on_delete())
         columns = Gtk.Box(spacing=36, margin=18)
@@ -1009,33 +1012,33 @@ class PreferencesDialog(Gtk.Dialog):
         self.per_row.connect("value-changed", self.on_per_row_changed)
         fixed = Gtk.Box(spacing=6)
         fixed.pack_start(self.per_row, False, False, 0)
-        fixed.pack_start(Gtk.Label(label="menus per row"), False, False, 0)
-        self.add_choices(left, "Menu layout", "layout", (
-            (LAYOUT_EQUAL, "One row, then _equal rows", None,
-             "If one row doesn't fit, as few rows as fit, with as many menus in each"),
-            (LAYOUT_FILL, "One row, then fi_ll each row", None,
-             "If one row doesn't fit, as many menus in each row as fit"),
-            (LAYOUT_TWO_ROWS, "T_wo rows", None, "More rows only if two don't fit"),
-            (LAYOUT_FIXED, "_Fixed:", fixed, "Always the same number of menus in each row"),
+        fixed.pack_start(Gtk.Label(label=_("menus per row")), False, False, 0)
+        self.add_choices(left, _("Menu layout"), "layout", (
+            (LAYOUT_EQUAL, _("One row, then _equal rows"), None,
+             _("If one row doesn't fit, as few rows as fit, with as many menus in each")),
+            (LAYOUT_FILL, _("One row, then fi_ll each row"), None,
+             _("If one row doesn't fit, as many menus in each row as fit")),
+            (LAYOUT_TWO_ROWS, _("T_wo rows"), None, _("More rows only if two don't fit")),
+            (LAYOUT_FIXED, _("_Fixed:"), fixed, _("Always the same number of menus in each row")),
         ))
-        self.add_choices(left, "Row width", "width", (
-            (WIDTH_WINDOW, "The application's win_dow", None,
-             "The menu stays inside the window when it can"),
-            (WIDTH_SCREEN, "The scree_n", None, "Wider rows, so fewer of them"),
+        self.add_choices(left, _("Row width"), "width", (
+            (WIDTH_WINDOW, _("The application's win_dow"), None,
+             _("The menu stays inside the window when it can")),
+            (WIDTH_SCREEN, _("The scree_n"), None, _("Wider rows, so fewer of them")),
         ))
-        self.add_choices(right, "When there's no room below the title bar", "no-room", (
-            (NO_ROOM_MOVE, "Move the _menu up", None, "Above the title bar, or over it,\nwith the rows as they are"),
-            (NO_ROOM_ROWS, "Change the _rows to fit", None, "Below the title bar,\nwith fewer, wider rows"),
+        self.add_choices(right, _("When there's no room below the title bar"), "no-room", (
+            (NO_ROOM_MOVE, _("Move the _menu up"), None, _("Above the title bar, or over it,\nwith the rows as they are")),
+            (NO_ROOM_ROWS, _("Change the _rows to fit"), None, _("Below the title bar,\nwith fewer, wider rows")),
         ))
-        self.add_choices(right, "Rows", "rows", (
-            (ROWS_LINED, "Lined _up", None, "Each row starts at the same height,\nwith a line between rows"),
-            (ROWS_STACKED, "Stac_ked up", None, "Each menu right under the one above it:\nshorter, but busier"),
+        self.add_choices(right, _("Rows"), "rows", (
+            (ROWS_LINED, _("Lined _up"), None, _("Each row starts at the same height,\nwith a line between rows")),
+            (ROWS_STACKED, _("Stac_ked up"), None, _("Each menu right under the one above it:\nshorter, but busier")),
         ))
-        self.add_choices(right, "Keyboard shortcuts", "shortcuts", (
-            (SHORTCUTS_SHOW, "_Show next to each item", None, "As in other menus"),
-            (SHORTCUTS_TOOLTIP, "Show in a _tooltip", None,
-             "Narrower menus: point at an item to see its shortcut"),
-            (SHORTCUTS_HIDE, "_Hide", None, "The narrowest menus"),
+        self.add_choices(right, _("Keyboard shortcuts"), "shortcuts", (
+            (SHORTCUTS_SHOW, _("_Show next to each item"), None, _("As in other menus")),
+            (SHORTCUTS_TOOLTIP, _("Show in a _tooltip"), None,
+             _("Narrower menus: point at an item to see its shortcut")),
+            (SHORTCUTS_HIDE, _("_Hide"), None, _("The narrowest menus")),
         ))
         self.show_all()
 
@@ -1052,7 +1055,7 @@ class PreferencesDialog(Gtk.Dialog):
             group = Gtk.RadioButton(no_show_all=True)
             box.pack_start(group, False, False, 0)
             if key == "layout":
-                note = Gtk.Label(label="Chosen the first time this menu opens, from how many menus there are",
+                note = Gtk.Label(label=_("Chosen the first time this menu opens, from how many menus there are"),
                                  xalign=0, margin_bottom=6)
                 note.get_style_context().add_class("dim-label")
                 box.pack_start(note, False, False, 0)
