@@ -89,14 +89,14 @@ to see all its menus at once.
    python3 buffet_menu.py --quit; python3 buffet_menu.py
    ```
    The applications you've added then open with a header bar in place of their title bar: their title,
-   the Buffet button and the window buttons. Turn it off with **Header bar** in Buffet Menu's window.
+   the Buffet button and the window buttons.
 
 ![The Buffet Menu app](screenshots/app.png)
 
 - **Each application has its own settings:** click the gear next to it. The first time its Buffet menu
   opens, it picks one row for an application with up to 4 menus, two rows for more.
-- **Keyboard shortcut, Header bar and Start at login** are at the bottom of the window. Without Start at
-  login, the applications' menu bars come back until Buffet Menu is started again.
+- **Keyboard shortcut and Start at login** are at the bottom of the window. Start at login is on from
+  the start; without it, the applications' menu bars come back until Buffet Menu is started again.
 - **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
   starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
   menu panels read it, and with Buffet Menu's own module (`buffet-headerbar.c`), which gives its main

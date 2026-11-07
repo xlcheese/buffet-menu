@@ -128,6 +128,9 @@ MODE_FULL = "full"          # all the menus, in rows of columns
 MODE_SCROLL = "scroll"      # all the menus, in a pop-up that scrolls
 # The titles are 2 px larger than the menu items (1.5 pt at 96 dpi)
 HEADING_GROWTH_PX = 2
+# Taking the mouse and keyboard when the menu opens: tried this many times, this many milliseconds apart
+GRAB_TRIES = 10
+GRAB_RETRY_MS = 50
 # The headings' style, as BuffetMenu.style_headings() last worked it out
 heading_style = None
 heading_css = None
@@ -416,13 +419,29 @@ class BuffetMenu:
         self.set_button_active(True)
         # Like a GTK menu, take all the mouse and keyboard events while open, so a click elsewhere closes it
         window = self.popup.get_window()
-        window.get_display().get_default_seat().grab(window, Gdk.SeatCapabilities.ALL, True, None,
-                                                      Gtk.get_current_event(), None, None)
+        self.grab_input(GRAB_TRIES)
         self.popup.grab_add()
         self.pointer = tuple(window.get_display().get_default_seat().get_pointer().get_position()[1:])
         if keyboard:
             self.select(self.first_enabled((column or self.columns[0]).items) or self.first_enabled(self.main_items()))
         self.on_opened()
+
+    def grab_input(self, tries):
+        """Takes the mouse and keyboard. Opened with a keyboard shortcut, the keys may still be held, and the
+        window manager may have the keyboard for a moment: tried again a few times, and if it still can't have
+        them, the menu closes, as it would otherwise stay open, with no click or key to close it."""
+        if not self.is_open:
+            return False
+        window = self.popup.get_window()
+        status = window.get_display().get_default_seat().grab(window, Gdk.SeatCapabilities.ALL, True, None,
+                                                               Gtk.get_current_event(), None, None)
+        if status == Gdk.GrabStatus.SUCCESS:
+            return False
+        if tries > 1:
+            GLib.timeout_add(GRAB_RETRY_MS, self.grab_input, tries - 1)
+        else:
+            self.close()
+        return False
 
     def prepare(self):
         """Lays the menu out without showing it, so that it shows at once when it opens: GTK measures the

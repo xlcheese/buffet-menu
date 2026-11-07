@@ -29,8 +29,6 @@
 static void (*original_realize) (GtkWidget *widget);
 /* Whether Buffet Menu is running: the application's menu bars are hidden while it is */
 static gboolean service_running = FALSE;
-/* BUFFET_MENU_HEADER_BAR=0: no header bar, only the menu bars hidden (Buffet Menu's Header bar setting) */
-static gboolean header_bars = TRUE;
 /* The application's menu entry, as Buffet Menu's launcher passed it on (BUFFET_MENU_APP): kept on its windows, for
  * Buffet Menu to use its settings. (Buffet Menu used to read it from the environment the application was started
  * with, but some applications overwrite that, with setproctitle: Linux Mint's Update Manager) */
@@ -75,7 +73,7 @@ has_menu_bar (GtkWindow *window)
 static gboolean
 wants_header_bar (GtkWindow *window)
 {
-  return header_bars && gtk_window_get_titlebar (window) == NULL && is_main_window (window) &&
+  return gtk_window_get_titlebar (window) == NULL && is_main_window (window) &&
          has_menu_bar (window);
 }
 
@@ -444,7 +442,7 @@ own_header_bar (GtkWindow *window)
 {
   GtkWidget *titlebar = gtk_window_get_titlebar (window), *header = NULL;
 
-  if (!header_bars || titlebar == NULL || g_object_get_data (G_OBJECT (window), "buffet-header") != NULL ||
+  if (titlebar == NULL || g_object_get_data (G_OBJECT (window), "buffet-header") != NULL ||
       !is_main_window (window) || !has_menu_bar (window))
     return NULL;
   find_header_bar (titlebar, &header);
@@ -566,7 +564,6 @@ restore_environment (void)
   else
     g_unsetenv ("GTK_MODULES");
   g_unsetenv ("BUFFET_MENU_GTK_MODULES");
-  g_unsetenv ("BUFFET_MENU_HEADER_BAR");
   g_unsetenv ("BUFFET_MENU_APP");
 }
 
@@ -578,7 +575,6 @@ gtk_module_init (gint *argc, gchar ***argv)
   if (original_realize != NULL)
     return;
   original_realize = klass->realize;
-  header_bars = g_strcmp0 (g_getenv ("BUFFET_MENU_HEADER_BAR"), "0") != 0;
   app_id = g_strdup (g_getenv ("BUFFET_MENU_APP"));
   restore_environment ();
   replace_realize (GTK_TYPE_WINDOW);

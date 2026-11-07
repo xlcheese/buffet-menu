@@ -76,7 +76,6 @@ LAUNCHER_SCRIPT = """#!/bin/sh
 BUFFET_MENU_APP="$1"
 shift
 export BUFFET_MENU_APP
-export BUFFET_MENU_HEADER_BAR={header_bar}
 # Buffet Menu's module puts it back as it was, for the programs the application starts
 export BUFFET_MENU_GTK_MODULES="${{GTK_MODULES-}}"
 export GTK_MODULES="${{GTK_MODULES:+$GTK_MODULES:}}{modules}"
@@ -87,14 +86,15 @@ exec "$@"
 # Settings: the service's, and those of each application's Buffet menu
 
 def load_settings():
-    settings = {"shortcut": DEFAULT_SHORTCUT, "header-bar": True, "apps": {}}
+    settings = {"shortcut": DEFAULT_SHORTCUT, "apps": {}}
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as source:
             settings.update(json.load(source))
     except (OSError, ValueError):
         pass
-    # The icon in the panel, which earlier versions had
+    # The icon in the panel and the Header bar switch, which earlier versions had
     settings.pop("panel-icon", None)
+    settings.pop("header-bar", None)
     return settings
 
 
@@ -119,6 +119,9 @@ def app_settings(settings, app):
 def missing_packages():
     """What Buffet Menu needs that isn't installed, in words."""
     missing = []
+    if not os.path.exists(HEADER_BAR_MODULE):
+        missing.append("Buffet Menu's own module, for the header bar: run ./build.sh in Buffet Menu's folder "
+                       "(it needs build-essential and libgtk-3-dev)")
     if not any(glob.glob(pattern) for pattern in MODULE_FILES):
         missing.append("appmenu-gtk3-module (to read the applications' menus)")
     if Keybinder is None:
@@ -275,15 +278,15 @@ def key_value(keyfile, group, key):
         return None
 
 
-def write_launcher(header_bar=True):
-    """The launcher, with Buffet Menu's module if it's built: it hides the menu bars while Buffet Menu runs, and
-    adds the header bar if it's wanted."""
+def write_launcher():
+    """The launcher, with Buffet Menu's module if it's built: it gives the applications their header bar with the
+    Buffet button, and hides their menu bars while Buffet Menu runs."""
     modules = ["appmenu-gtk-module"]
     if os.path.exists(HEADER_BAR_MODULE):
         modules.insert(0, HEADER_BAR_MODULE)
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(LAUNCHER, "w", encoding="utf-8") as target:
-        target.write(LAUNCHER_SCRIPT.format(modules=":".join(modules), header_bar=1 if header_bar else 0))
+        target.write(LAUNCHER_SCRIPT.format(modules=":".join(modules)))
     os.chmod(LAUNCHER, 0o755)
 
 
@@ -420,7 +423,7 @@ class BuffetMenuApp(Gtk.Application):
             save_settings(self.settings)
         # The settings window's icon (in the window list and Alt+Tab)
         Gtk.Window.set_default_icon_name(APP_ICON_NAME)
-        write_launcher(self.settings["header-bar"])
+        write_launcher()
         # The Buffet button of the header bar module asks for a window's menus with this action
         show_window = Gio.SimpleAction.new("show-window", GLib.VariantType.new("u"))
         show_window.connect("activate", lambda _action, xid: self.show_menu(False, xid.get_uint32()))
@@ -774,15 +777,9 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.shortcut_button.connect("clicked", self.on_change_shortcut)
         self.set_shortcut_label()
         self.shortcut_button.set_sensitive(Keybinder is not None)
-        header_bar = Gtk.Switch(active=app.settings["header-bar"] and os.path.exists(HEADER_BAR_MODULE),
-                                halign=Gtk.Align.START, sensitive=os.path.exists(HEADER_BAR_MODULE))
-        header_bar.connect("notify::active", self.on_header_bar)
         login = Gtk.Switch(active=os.path.exists(AUTOSTART_FILE), halign=Gtk.Align.START)
         login.connect("notify::active", self.on_start_at_login)
         rows = (("Keyboard shortcut", self.shortcut_button, "Shows the Buffet menu of the active window"),
-                ("Header bar", header_bar,
-                  "A header bar with the Buffet button, in place of the title bar" if os.path.exists(HEADER_BAR_MODULE)
-                  else "Build it first, with build.sh in Buffet Menu's folder"),
                 ("Start at login", login, "Without it, the menu bars come back until Buffet Menu is started"))
         for row, (label, widget, note_text) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
@@ -852,7 +849,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
             return "No menu bar found: this application can't have the Buffet menu"
         if entry.get("menus"):
             return f"{entry['menus']} menus"
-        if self.app.settings["header-bar"] and os.path.exists(HEADER_BAR_MODULE):
+        if os.path.exists(HEADER_BAR_MODULE):
             return "Not opened yet: reopen it, then click its Buffet button"
         shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         return f"Not opened yet: reopen it, then press {shortcut} in it"
@@ -888,12 +885,6 @@ class SettingsWindow(Gtk.ApplicationWindow):
         # Chosen: kept as it is from now on (see BuffetMenuApp.do_startup())
         self.app.settings["start-at-login-chosen"] = True
         save_settings(self.app.settings)
-
-    def on_header_bar(self, switch, _param):
-        # For the applications started from now on
-        self.app.settings["header-bar"] = switch.get_active()
-        save_settings(self.app.settings)
-        write_launcher(switch.get_active())
 
     # The keyboard shortcut: click the button, then press the keys
 
