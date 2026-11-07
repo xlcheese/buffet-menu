@@ -547,6 +547,7 @@ class BuffetMenuApp(Gtk.Application):
         menu.set_rows(entry["rows"])
         menu.set_no_room(entry["no-room"])
         menu.set_shortcuts(entry["shortcuts"])
+        menu.set_shortcut(self.settings["shortcut"])
         menu.on_layout_chosen = on_layout_chosen
 
     def keep(self, menu):

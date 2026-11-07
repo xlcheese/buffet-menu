@@ -24,6 +24,8 @@
 #define ACCELS_PROPERTY "_BUFFET_MENU_ACCELS"
 #define LABEL_ACCELS_PROPERTY "_BUFFET_MENU_LABEL_ACCELS"
 #define APP_PROPERTY "_BUFFET_MENU_APP"
+/* Buffet Menu sets it to "1" while the window's Buffet menu is open, "0" when it closes */
+#define OPEN_PROPERTY "_BUFFET_MENU_OPEN"
 #define ICON_NAME "buffet-menu-symbolic"
 
 static void (*original_realize) (GtkWidget *widget);
@@ -145,10 +147,65 @@ ask_service (GtkWidget *widget, const gchar *action)
   g_object_unref (bus);
 }
 
-static void
-on_buffet_clicked (GtkButton *button, gpointer data)
+/* The Buffet button stays pressed while the window's Buffet menu is open, as a menu button does. Buffet Menu shows
+ * the menu, in its own process: it says when it's open with the window's _BUFFET_MENU_OPEN property */
+static void on_buffet_toggled (GtkToggleButton *button, gpointer data);
+
+static gboolean
+menu_is_open (GtkWidget *widget)
 {
+  GdkWindow *window = gtk_widget_get_window (gtk_widget_get_toplevel (widget));
+  GdkAtom type;
+  gint format, length;
+  guchar *data = NULL;
+  gboolean open = FALSE;
+
+  if (window != NULL &&
+      gdk_property_get (window, gdk_atom_intern_static_string (OPEN_PROPERTY),
+                        gdk_atom_intern_static_string ("UTF8_STRING"), 0, 4, FALSE, &type, &format, &length, &data))
+    {
+      open = length > 0 && data[0] == '1';
+      g_free (data);
+    }
+  return open;
+}
+
+static void
+set_button_pressed (GtkWidget *button, gboolean pressed)
+{
+  g_signal_handlers_block_by_func (button, on_buffet_toggled, NULL);
+  gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button), pressed);
+  g_signal_handlers_unblock_by_func (button, on_buffet_toggled, NULL);
+}
+
+/* A moment after a click: if no menu opened (Buffet Menu isn't running, say), the button comes back up */
+static gboolean
+check_menu_opened (gpointer button)
+{
+  set_button_pressed (button, menu_is_open (button));
+  g_object_unref (button);
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_buffet_toggled (GtkToggleButton *button, gpointer data)
+{
+  if (!gtk_toggle_button_get_active (button))
+    {
+      /* Clicked while its menu is open: the menu closes itself on a click outside it */
+      set_button_pressed (GTK_WIDGET (button), menu_is_open (GTK_WIDGET (button)));
+      return;
+    }
   ask_service (GTK_WIDGET (button), "show-window");
+  g_timeout_add (500, check_menu_opened, g_object_ref (button));
+}
+
+static gboolean
+on_property_changed (GtkWidget *window, GdkEventProperty *event, GtkWidget *button)
+{
+  if (event->atom == gdk_atom_intern_static_string (OPEN_PROPERTY))
+    set_button_pressed (button, menu_is_open (button));
+  return FALSE;
 }
 
 /* The application's keyboard shortcuts, as "action=shortcut|action=shortcut…", with the actions' detailed names */
@@ -371,11 +428,19 @@ add_buffet_button (GtkWindow *window, GtkWidget *header)
   GtkWidget *button;
 
   find_icon (GTK_WIDGET (window));
-  button = gtk_button_new_from_icon_name (ICON_NAME, GTK_ICON_SIZE_BUTTON);
+  button = gtk_toggle_button_new ();
+  gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name (ICON_NAME, GTK_ICON_SIZE_BUTTON));
 
   gtk_widget_set_tooltip_text (button, "Menu");
   gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
-  g_signal_connect (button, "clicked", G_CALLBACK (on_buffet_clicked), NULL);
+  g_signal_connect (button, "toggled", G_CALLBACK (on_buffet_toggled), NULL);
+  /* Buffet Menu says when the window's menu opens and closes, with a property of the window */
+  gtk_widget_add_events (GTK_WIDGET (window), GDK_PROPERTY_CHANGE_MASK);
+  if (gtk_widget_get_window (GTK_WIDGET (window)) != NULL)
+    gdk_window_set_events (gtk_widget_get_window (GTK_WIDGET (window)),
+                           gdk_window_get_events (gtk_widget_get_window (GTK_WIDGET (window))) |
+                           GDK_PROPERTY_CHANGE_MASK);
+  g_signal_connect (window, "property-notify-event", G_CALLBACK (on_property_changed), button);
   gtk_header_bar_pack_end (GTK_HEADER_BAR (header), button);
   gtk_widget_show (button);
   g_signal_connect_after (header, "size-allocate", G_CALLBACK (on_header_allocated), button);

@@ -363,6 +363,7 @@ class BuffetMenu:
         self.access_keys = False
         self.selected = None
         self.disabled = set()   # the items the application has disabled, by their paths ("Edit → Paste")
+        self.shortcut_keys = None   # the keyboard shortcut that opens the menu, as (key, modifiers): it closes it too
         self.pointer = None     # where the mouse pointer was last seen, on the screen
         self.levels = []        # the open submenus, from the outermost
         self.sub_popups = []    # a pop-up window for each depth of submenu, kept for the next time
@@ -477,6 +478,11 @@ class BuffetMenu:
     def set_rows(self, rows):
         """Whether the menus of a row line up, or stack up under the menus above them (see ROWS_LINED)."""
         self.rows = rows
+
+    def set_shortcut(self, shortcut):
+        """The keyboard shortcut that opens the menu (as "<Control><Alt>n"): pressed while it's open, it closes it."""
+        key, mods = Gtk.accelerator_parse(shortcut or "")
+        self.shortcut_keys = (Gdk.keyval_to_lower(key), mods) if key else None
 
     def set_disabled(self, paths):
         """The items that the application has disabled, by their paths ("Edit → Paste"): greyed out."""
@@ -860,7 +866,8 @@ class BuffetMenu:
         mods = event.state & Gtk.accelerator_get_default_mod_mask()
         if key in (Gdk.KEY_Alt_L, Gdk.KEY_Alt_R):
             self.show_access_keys(True)
-        elif key == Gdk.KEY_F10:
+        elif key == Gdk.KEY_F10 or (Gdk.keyval_to_lower(key), mods) == self.shortcut_keys:
+            # F10, or the shortcut that opened it, closes it, as F10 closes a menu bar's menu
             self.close()
         elif key == Gdk.KEY_Escape:
             if self.levels:

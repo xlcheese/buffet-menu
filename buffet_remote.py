@@ -39,6 +39,9 @@ CONVERTED_TIME = 30
 REGISTRAR_NAME = "com.canonical.AppMenu.Registrar"
 # Where the header bar module keeps the position of a window's header bar and Buffet button
 HEADER_PROPERTY = "_BUFFET_MENU_HEADER"
+# Where Buffet Menu tells the module whether the window's Buffet menu is open ("1") or not ("0"): its Buffet
+# button stays pressed while it is
+OPEN_PROPERTY = "_BUFFET_MENU_OPEN"
 # Where it keeps the keyboard shortcuts the application registered with GTK, as "action=shortcut|…"
 ACCELS_PROPERTY = "_BUFFET_MENU_ACCELS"
 # And those its menu bar's items show, by their labels: "File\x1fSave\t<Primary>s", one a line
@@ -73,6 +76,9 @@ class X11:
             ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int),
             ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_void_p)]
         self.lib.XFree.argtypes = [ctypes.c_void_p]
+        self.lib.XChangeProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+                                             ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        self.lib.XFlush.argtypes = [ctypes.c_void_p]
         # A window that has just closed would otherwise end the program, with libX11's own error handler
         self.on_error = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)(lambda _display, _error: 0)
         self.lib.XSetErrorHandler(self.on_error)
@@ -84,6 +90,16 @@ class X11:
         if name not in self.atoms:
             self.atoms[name] = self.lib.XInternAtom(self.display, name.encode(), False)
         return self.atoms[name]
+
+    def set(self, window, name, text):
+        """Sets a text property of a window (of another application: it can watch it change)."""
+        if not self.display or not window:
+            return
+        data = text.encode()
+        # PropModeReplace is 0, and text is in 8-bit units
+        self.lib.XChangeProperty(self.display, window, self.atom(name), self.atom("UTF8_STRING"), 8, 0, data,
+                                 len(data))
+        self.lib.XFlush(self.display)
 
     def get(self, window, name):
         """A property's value: bytes for text, a list of numbers for numbers and windows, or None."""
@@ -427,6 +443,7 @@ class WindowBuffet(buffet.BuffetMenu):
         return x + width - 150, y, height, height
 
     def set_button_active(self, active):
+        x11.set(self.xid, OPEN_PROPERTY, "1" if active else "0")
         if not active:
             self.on_closed()
 
