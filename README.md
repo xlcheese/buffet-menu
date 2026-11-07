@@ -67,7 +67,7 @@ When the menus are too tall for the screen, the menu scrolls.
 ## The Buffet Menu app (beta)
 
 `buffet_menu.py` gives your own applications the Buffet menu, without changing them. Choose the
-applications in its window, then press **Ctrl+Alt+N** in one of them, or click the Buffet icon in the panel,
+applications in its window, then click the Buffet button in one of them, or press **Ctrl+Alt+N**,
 to see all its menus at once.
 
 1. Install what it needs:
@@ -95,7 +95,7 @@ to see all its menus at once.
 
 - **Each application has its own settings:** click the gear next to it. The first time its Buffet menu
   opens, it picks one row for an application with up to 4 menus, two rows for more.
-- **Keyboard shortcut, panel icon and Start at login** are at the bottom of the window. Without Start at
+- **Keyboard shortcut, Header bar and Start at login** are at the bottom of the window. Without Start at
   login, the applications' menu bars come back until Buffet Menu is started again.
 - **How it works:** `+` puts a copy of the application's menu entry in `~/.local/share/applications`. It
   starts the application with `appmenu-gtk-module`, which publishes its menu bar on D-Bus, the way global
@@ -107,7 +107,7 @@ to see all its menus at once.
   GTK3 applications; one that turns out to have a header bar of its own (and no menu bar behind it) or no
   menu bar is taken off the list when it first opens. Tick **Show all applications** to see the others,
   and why they're left out. Not with GTK2 applications (GIMP 2.10), GTK4, Qt, Flatpak or Wayland.
-- **To stop it:** `python3 buffet_menu.py --quit`, or Quit from the panel icon's menu.
+- **To stop it:** `python3 buffet_menu.py --quit`.
 
 ## License
 

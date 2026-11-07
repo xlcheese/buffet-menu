@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 """Buffet Menu: every menu of your applications at once.
 
-A small service that shows the menus of the applications you choose as a Buffet menu, from a keyboard
-shortcut or an icon in the panel, and its settings window. The applications themselves don't change: they
+A small service that shows the menus of the applications you choose as a Buffet menu, from the Buffet button
+in their header bar or a keyboard shortcut, and its settings window. The applications themselves don't change: they
 start with appmenu-gtk-module, which publishes their menu bar on D-Bus, and the service hides it.
 
     python3 buffet_menu.py            starts the service if it isn't running, and opens the settings
@@ -35,11 +35,6 @@ try:
     from gi.repository import Keybinder
 except (ValueError, ImportError):
     Keybinder = None
-try:
-    gi.require_version("XApp", "1.0")
-    from gi.repository import XApp
-except (ValueError, ImportError):
-    XApp = None
 
 APP_ID = "io.github.xlcheese.BuffetMenu"
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "buffet-menu")
@@ -50,16 +45,14 @@ LAUNCHER = os.path.join(DATA_DIR, "buffet-launch")
 APPLICATIONS_DIR = os.path.join(GLib.get_user_data_dir(), "applications")
 OWN_DESKTOP_FILE = os.path.join(APPLICATIONS_DIR, APP_ID + ".desktop")
 AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", APP_ID + ".desktop")
-# In the user's icon theme, so that the panel and the menus find it by name and recolour it, as a symbolic icon
-# The icons: the Buffet button's in the header bars, the tray in the panel, and Buffet Menu's own (a cafeteria tray)
+# The icons, in the user's icon theme so that applications and menus find them by name: the Buffet button's in
+# the header bars (a symbolic icon, recoloured to match the theme), and Buffet Menu's own (a cafeteria tray)
 ICON_NAME = "buffet-menu-symbolic"
-PANEL_ICON_NAME = "buffet-menu-tray-symbolic"
 APP_ICON_NAME = "buffet-menu"
 ICONS_DIR = os.path.join(GLib.get_user_data_dir(), "icons", "hicolor")
 ICON_FILE = os.path.join(ICONS_DIR, "scalable", "apps", ICON_NAME + ".svg")
 # Where each icon of the icons folder goes, in the user's icons: (file, size folder, name)
-ICON_FILES = (("buffet-menu-tray-symbolic.svg", "scalable", PANEL_ICON_NAME),
-              ("buffet-menu.svg", "scalable", APP_ICON_NAME),
+ICON_FILES = (("buffet-menu.svg", "scalable", APP_ICON_NAME),
               # Drawn for 16 px, where the other would blur
               ("buffet-menu-16.svg", "16x16", APP_ICON_NAME))
 # Marks the applications' menu entries that Buffet Menu wrote, so that it only ever removes its own
@@ -94,12 +87,14 @@ exec "$@"
 # Settings: the service's, and those of each application's Buffet menu
 
 def load_settings():
-    settings = {"shortcut": DEFAULT_SHORTCUT, "panel-icon": True, "header-bar": True, "apps": {}}
+    settings = {"shortcut": DEFAULT_SHORTCUT, "header-bar": True, "apps": {}}
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as source:
             settings.update(json.load(source))
     except (OSError, ValueError):
         pass
+    # The icon in the panel, which earlier versions had
+    settings.pop("panel-icon", None)
     return settings
 
 
@@ -294,7 +289,7 @@ def write_launcher(header_bar=True):
 
 def enable(app):
     """Gives an application the Buffet menu: a copy of its menu entry in the user's applications, that
-    starts it through the launcher. The menu, the panel and the file manager use it from then on."""
+    starts it through the launcher. The applications menu, panel launchers and the file manager use it from then on."""
     if not os.path.exists(LAUNCHER):
         write_launcher()
     info = Gio.DesktopAppInfo.new(app)
@@ -371,7 +366,7 @@ def write_own_entries():
             target = os.path.join(ICONS_DIR, size, "apps", name + ".svg")
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.copyfile(os.path.join(icons, source), target)
-    # The folder's change time tells the icon themes of the panel and the menu to look again
+    # The folder's change time tells the icon themes of the applications menu and other programs to look again
     os.utime(ICONS_DIR)
     Gtk.IconTheme.get_default().rescan_if_needed()
     os.makedirs(APPLICATIONS_DIR, exist_ok=True)
@@ -408,7 +403,6 @@ class BuffetMenuApp(Gtk.Application):
         self.built = {}    # the Buffet menus shown before, by window: xid → (menus, WindowBuffet), the latest last
         self.published = None   # the menus of the window whose Buffet menu is open (a RemoteMenu)
         self.window = None
-        self.status_icon = None
         self.shortcut = None
         self.registrar = None
         self.loaded = {}   # the menus loaded before, by window: (bus name, path) → RemoteMenu, the latest last
@@ -418,6 +412,12 @@ class BuffetMenuApp(Gtk.Application):
         buffet.set_up_style()
         self.settings = load_settings()
         write_own_entries()
+        # Set up and forgotten: Buffet Menu starts at login, unless that's been turned off in its window. Without it,
+        # the applications' menu bars come back after a restart, until Buffet Menu is started again
+        if not self.settings.get("start-at-login-chosen"):
+            set_autostart(True)
+            self.settings["start-at-login-chosen"] = True
+            save_settings(self.settings)
         # The settings window's icon (in the window list and Alt+Tab)
         Gtk.Window.set_default_icon_name(APP_ICON_NAME)
         write_launcher(self.settings["header-bar"])
@@ -446,7 +446,6 @@ class BuffetMenuApp(Gtk.Application):
         if Keybinder is not None:
             Keybinder.init()
             self.bind_shortcut(self.settings["shortcut"])
-        self.show_panel_icon(self.settings["panel-icon"])
         # The windows already open, if Buffet Menu was started after them: their menus are loaded too
         GLib.timeout_add(500, self.load_open_windows)
 
@@ -465,7 +464,7 @@ class BuffetMenuApp(Gtk.Application):
             self.show_settings()
         return 0
 
-    # The keyboard shortcut and the panel icon
+    # The keyboard shortcut
 
     def bind_shortcut(self, shortcut):
         if Keybinder is None:
@@ -477,26 +476,6 @@ class BuffetMenuApp(Gtk.Application):
             self.shortcut = shortcut
             return True
         return False
-
-    def show_panel_icon(self, shown):
-        if XApp is None:
-            return
-        if shown and self.status_icon is None:
-            self.status_icon = XApp.StatusIcon()
-            self.status_icon.set_icon_name(PANEL_ICON_NAME if os.path.exists(
-                os.path.join(ICONS_DIR, "scalable", "apps", PANEL_ICON_NAME + ".svg")) else ICON_NAME)
-            self.status_icon.set_tooltip_text("Buffet menu: click to show the menus of the active window")
-            self.status_icon.connect("activate", lambda _icon, _button, _time: self.show_menu(False))
-            menu = Gtk.Menu()
-            for label, action in (("Settings", self.show_settings), ("Quit", self.quit)):
-                item = Gtk.MenuItem(label=label)
-                item.connect("activate", lambda _item, act=action: act())
-                menu.append(item)
-            menu.show_all()
-            self.status_icon.set_secondary_menu(menu)
-        elif not shown and self.status_icon is not None:
-            self.status_icon.set_visible(False)
-            self.status_icon = None
 
     # Showing an application's menus
 
@@ -795,16 +774,12 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.shortcut_button.connect("clicked", self.on_change_shortcut)
         self.set_shortcut_label()
         self.shortcut_button.set_sensitive(Keybinder is not None)
-        panel_icon = Gtk.Switch(active=app.settings["panel-icon"] and XApp is not None, halign=Gtk.Align.START,
-                                sensitive=XApp is not None)
-        panel_icon.connect("notify::active", self.on_panel_icon)
         header_bar = Gtk.Switch(active=app.settings["header-bar"] and os.path.exists(HEADER_BAR_MODULE),
                                 halign=Gtk.Align.START, sensitive=os.path.exists(HEADER_BAR_MODULE))
         header_bar.connect("notify::active", self.on_header_bar)
         login = Gtk.Switch(active=os.path.exists(AUTOSTART_FILE), halign=Gtk.Align.START)
-        login.connect("notify::active", lambda switch, _param: set_autostart(switch.get_active()))
+        login.connect("notify::active", self.on_start_at_login)
         rows = (("Keyboard shortcut", self.shortcut_button, "Shows the Buffet menu of the active window"),
-                ("Icon in the panel", panel_icon, "Click it to show the Buffet menu of the active window"),
                 ("Header bar", header_bar,
                   "A header bar with the Buffet button, in place of the title bar" if os.path.exists(HEADER_BAR_MODULE)
                   else "Build it first, with build.sh in Buffet Menu's folder"),
@@ -877,6 +852,8 @@ class SettingsWindow(Gtk.ApplicationWindow):
             return "No menu bar found: this application can't have the Buffet menu"
         if entry.get("menus"):
             return f"{entry['menus']} menus"
+        if self.app.settings["header-bar"] and os.path.exists(HEADER_BAR_MODULE):
+            return "Not opened yet: reopen it, then click its Buffet button"
         shortcut = Gtk.accelerator_get_label(*Gtk.accelerator_parse(self.app.settings["shortcut"]))
         return f"Not opened yet: reopen it, then press {shortcut} in it"
 
@@ -906,16 +883,17 @@ class SettingsWindow(Gtk.ApplicationWindow):
             self.preferences[app] = dialog
         dialog.present()
 
+    def on_start_at_login(self, switch, _param):
+        set_autostart(switch.get_active())
+        # Chosen: kept as it is from now on (see BuffetMenuApp.do_startup())
+        self.app.settings["start-at-login-chosen"] = True
+        save_settings(self.app.settings)
+
     def on_header_bar(self, switch, _param):
         # For the applications started from now on
         self.app.settings["header-bar"] = switch.get_active()
         save_settings(self.app.settings)
         write_launcher(switch.get_active())
-
-    def on_panel_icon(self, switch, _param):
-        self.app.settings["panel-icon"] = switch.get_active()
-        save_settings(self.app.settings)
-        self.app.show_panel_icon(switch.get_active())
 
     # The keyboard shortcut: click the button, then press the keys
 
