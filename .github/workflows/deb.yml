@@ -23,7 +23,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            debhelper dh-python dpkg-dev gettext python3 libgtk-3-dev pkgconf
+            build-essential debhelper dh-python dpkg-dev gettext python3 libgtk-3-dev pkgconf
 
       - name: Check that the tag is the changelog's version
         if: startsWith(github.ref, 'refs/tags/v')
