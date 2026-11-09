@@ -173,7 +173,13 @@ class CheckNode(Gtk.DrawingArea):
             self.unset_state_flags(Gtk.StateFlags.CHECKED)
 
     def do_draw(self, cr):
-        self.render(self.get_style_context(), cr, 0, 0, self.get_allocated_width(), self.get_allocated_height())
+        # As a menu item's own check box: the theme's background and border, then its icon (the tick, the dot, or
+        # the whole box in themes that draw it as an image). render_check() and render_option() only draw the icon
+        style = self.get_style_context()
+        width, height = self.get_allocated_width(), self.get_allocated_height()
+        Gtk.render_background(style, cr, 0, 0, width, height)
+        Gtk.render_frame(style, cr, 0, 0, width, height)
+        self.render(style, cr, 0, 0, width, height)
         return False
 
 
